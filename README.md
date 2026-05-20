@@ -1,36 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🧠 Local AI Assistant
 
-## Getting Started
+**Private, offline AI assistant powered by Ollama.**  
+Chat, code, analyze files — all on your machine. No API keys. No data leaves your computer.
 
-First, run the development server:
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+![Ollama](https://img.shields.io/badge/ollama-%E2%89%A50.1.0-orange)
+
+---
+
+## ✨ Features
+
+- **Chat with AI** — streaming responses, markdown + code highlighting
+- **Smart model routing** — automatically picks the best model for code, analysis, or general chat
+- **Auto-download** — missing models download on demand with a live progress bar
+- **Conversation history** — persisted locally in SQLite, never synced to the cloud
+- **Dark/light theme** — toggle in the sidebar
+
+## 🚀 Quick Start
 
 ```bash
+# 1. Install Ollama & pull a model
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2:3b
+
+# 2. Install & run the app
+npm install
+npx drizzle-kit push
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **Windows users:** replace `curl ... | sh` with:
+> ```powershell
+> irm https://ollama.com/install.ps1 | iex
+> ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 💡 Why This?
 
-## Learn More
+| vs ChatGPT / Claude | This app |
+|---------------------|----------|
+| ☁️ Requires internet | 🔒 100% offline after initial model download |
+| 💵 Subscription or API fees | 🆓 Completely free |
+| 🤖 Data goes to third parties | 🏠 Stays on your machine |
 
-To learn more about Next.js, take a look at the following resources:
+## 🖼️ Screenshots
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> _(Add screenshots here — example: `./screenshots/chat.png`)_
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🔧 Default Models
 
-## Deploy on Vercel
+| Model | Size | Best for |
+|-------|------|----------|
+| `llama3.2:3b` | ~2 GB | Fast general chat |
+| `qwen2.5:7b` | ~4.5 GB | Reasoning & analysis |
+| `deepseek-coder:6.7b` | ~3.8 GB | Code generation & debugging |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+> Models auto-download when first needed. You can toggle auto-switch off in the sidebar.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## ❓ Troubleshooting
+
+<details>
+<summary>Web UI shows "503 Service Unavailable"</summary>
+
+1. Open a terminal and run `ollama serve`
+2. Wait for `Listening on 127.0.0.1:11434`
+3. Reload http://localhost:3000
+</details>
+
+<details>
+<summary>No models in the dropdown</summary>
+
+1. Run `ollama list` to check installed models
+2. If empty, run `ollama pull llama3.2:3b`
+3. Reload http://localhost:3000
+</details>
+
+<details>
+<summary>First code message is slow</summary>
+
+The first time you send a code prompt, the app may download `deepseek-coder:6.7b` (~3.8 GB).  
+A progress bar shows in the chat input area. Subsequent uses are instant.
+</details>
+
+## 📁 Project Structure
+
+<details>
+<summary>Click to expand</summary>
+
+```
+src/
+  app/           — Next.js pages & API routes
+  components/    — React components
+  lib/           — Ollama client, classifier, chat state, utils
+  db/            — Drizzle schema & SQLite database
+  types.ts       — Shared TypeScript types
+```
+</details>
+
+## 📄 License
+
+MIT
