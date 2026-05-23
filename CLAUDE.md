@@ -1,8 +1,8 @@
-# Local AI Assistant (Ollama)
+# VaultChat
 
 ## Project Overview
-A fully local AI assistant running via Ollama, accessible in the browser.
-Supports chat, code assistance, and file analysis — all offline.
+A fully private AI assistant running via Ollama, accessible in the browser.
+Your data never leaves your device. Supports chat, code assistance, and file analysis — all offline.
 
 ## Tech Stack
 - Frontend: Next.js 16 (App Router), Tailwind CSS v4

@@ -33,10 +33,10 @@ export function ChatMessages() {
           <div className="text-center space-y-4">
             <div className="flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm font-medium mx-auto w-fit">
               <ShieldCheck size={16} />
-              100% Private · Local AI
+              100% Private · Your data stays local
             </div>
             <h2 className="text-2xl font-semibold text-zinc-600 dark:text-zinc-400">
-              Local AI Assistant
+              VaultChat
             </h2>
             <p className="text-sm">Select a conversation or start a new one</p>
           </div>

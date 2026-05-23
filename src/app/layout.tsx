@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Local AI Assistant",
-  description: "A local AI assistant powered by Ollama",
+  title: "VaultChat — Your Private AI",
+  description: "A fully private AI assistant powered by Ollama. Your data never leaves your device.",
 }
 
 export default function RootLayout({

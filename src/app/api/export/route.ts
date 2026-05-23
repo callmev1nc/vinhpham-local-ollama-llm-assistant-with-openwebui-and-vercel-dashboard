@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     .orderBy(messages.createdAt)
 
   let markdown = `# ${conv.title}\n\n`
-  markdown += `_Exported from Local AI Assistant — ${new Date().toLocaleDateString()}_\n\n`
+  markdown += `_Exported from VaultChat — ${new Date().toLocaleDateString()}_\n\n`
   markdown += `---\n\n`
 
   for (const msg of msgs) {

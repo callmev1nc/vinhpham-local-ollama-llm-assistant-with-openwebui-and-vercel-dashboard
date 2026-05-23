@@ -1,6 +1,6 @@
-# 🧠 Local AI Assistant
+# 🧠 VaultChat — Your Private AI
 
-**Private, offline AI assistant powered by Ollama.**  
+**Private, offline AI assistant powered by Ollama.**
 Chat, code, analyze files — all on your machine. No API keys. No data leaves your computer.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
