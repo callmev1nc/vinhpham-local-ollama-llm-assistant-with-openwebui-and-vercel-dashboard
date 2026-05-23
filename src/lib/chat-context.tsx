@@ -3,6 +3,7 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from "react"
 import type { Conversation, Message, ClassificationResult, PullProgress } from "@/types"
 import { classifyPrompt } from "@/lib/classifier"
+import { getDefaultModel } from "@/lib/ollama"
 
 function getOrCreateSessionId(): string {
   if (typeof window === "undefined") return ""
@@ -244,11 +245,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const newConversation = useCallback(async (model = "llama3.2:3b") => {
+  const newConversation = useCallback(async (model?: string) => {
     const res = await fetch("/api/conversations", {
       method: "POST",
       headers: getSessionHeaders(),
-      body: JSON.stringify({ model }),
+      body: JSON.stringify(model ? { model } : {}),
     })
     const data = await res.json()
     await loadConversations()
@@ -284,7 +285,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/conversations", {
         method: "POST",
         headers: getSessionHeaders(),
-        body: JSON.stringify({ model: "llama3.2:3b" }),
+        body: JSON.stringify({}),
       })
       const data = await res.json()
       conversationId = data.conversation.id
@@ -323,7 +324,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_STREAMING", streaming: true })
     dispatch({ type: "SET_ERROR", error: null })
 
-    let model = s.conversations.find((c) => c.id === conversationId)?.model || "llama3.2:3b"
+    let model = s.conversations.find((c) => c.id === conversationId)?.model || getDefaultModel()
     let switched = false
 
     if (s.autoSwitch) {

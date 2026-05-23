@@ -3,6 +3,7 @@ import { db } from "@/db"
 import { conversations } from "@/db/schema"
 import { desc, eq } from "drizzle-orm"
 import crypto from "crypto"
+import { getDefaultModel } from "@/lib/ollama"
 
 function getSessionId(req: NextRequest): string {
   return req.headers.get("x-session-id") || req.nextUrl.searchParams.get("sessionId") || ""
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     id: crypto.randomUUID(),
     sessionId,
     title: body.title || "New conversation",
-    model: body.model || "llama3.2:3b",
+    model: body.model || getDefaultModel(),
   }
 
   await db.insert(conversations).values(conv)

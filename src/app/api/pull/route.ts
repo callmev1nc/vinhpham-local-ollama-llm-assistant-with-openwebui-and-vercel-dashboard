@@ -1,10 +1,17 @@
 import { NextRequest } from "next/server"
+import { isGroq } from "@/lib/ollama"
 
 export async function POST(req: NextRequest) {
   const { model } = await req.json()
 
   if (!model) {
     return new Response(JSON.stringify({ error: "Model name required" }), { status: 400 })
+  }
+
+  if (isGroq()) {
+    return new Response(`data: ${JSON.stringify({ status: "success" })}\n\n`, {
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+    })
   }
 
   const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || "http://localhost:11434"

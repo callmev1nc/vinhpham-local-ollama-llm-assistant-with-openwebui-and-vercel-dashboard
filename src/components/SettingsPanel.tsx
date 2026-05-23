@@ -2,6 +2,7 @@
 
 import { useChat } from "@/lib/chat-context"
 import { RotateCcw, Zap } from "lucide-react"
+import { getDefaultModel } from "@/lib/ollama"
 
 export function SettingsPanel() {
   const { state, setAutoSwitch, switchModel, updateSystemPrompt } = useChat()
@@ -59,7 +60,7 @@ export function SettingsPanel() {
       <button
         onClick={() => {
           if (state.activeId) {
-            switchModel(state.activeId, "llama3.2:3b")
+            switchModel(state.activeId, getDefaultModel())
           }
         }}
         className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

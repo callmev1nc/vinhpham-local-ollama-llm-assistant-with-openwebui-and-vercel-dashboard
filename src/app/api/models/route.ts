@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { listModels } from "@/lib/ollama"
+import { listModels, isGroq } from "@/lib/ollama"
 
 export async function GET() {
   try {
@@ -7,7 +7,7 @@ export async function GET() {
     return NextResponse.json({ models })
   } catch {
     return NextResponse.json(
-      { error: "Could not reach Ollama. Is it running?" },
+      { error: isGroq() ? "Could not reach Groq API. Check your API key." : "Could not reach Ollama. Is it running?" },
       { status: 503 }
     )
   }
