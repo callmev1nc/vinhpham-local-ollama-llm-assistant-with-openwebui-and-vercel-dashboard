@@ -1,28 +1,41 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { conversations } from "@/db/schema"
-import { desc } from "drizzle-orm"
+import { desc, eq } from "drizzle-orm"
 import crypto from "crypto"
 
-export async function GET() {
+function getSessionId(req: NextRequest): string {
+  return req.headers.get("x-session-id") || req.nextUrl.searchParams.get("sessionId") || ""
+}
+
+export async function GET(req: NextRequest) {
+  const sessionId = getSessionId(req)
+  if (!sessionId) {
+    return NextResponse.json({ error: "Session ID required" }, { status: 401 })
+  }
+
   const all = await db
     .select()
     .from(conversations)
+    .where(eq(conversations.sessionId, sessionId))
     .orderBy(desc(conversations.updatedAt))
 
   return NextResponse.json({ conversations: all })
 }
 
 export async function POST(req: NextRequest) {
+  const sessionId = getSessionId(req)
+  if (!sessionId) {
+    return NextResponse.json({ error: "Session ID required" }, { status: 401 })
+  }
+
   const body = await req.json()
-  const now = new Date().toISOString()
 
   const conv = {
     id: crypto.randomUUID(),
+    sessionId,
     title: body.title || "New conversation",
     model: body.model || "llama3.2:3b",
-    createdAt: now,
-    updatedAt: now,
   }
 
   await db.insert(conversations).values(conv)

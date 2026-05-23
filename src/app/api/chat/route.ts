@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { db } from "@/db"
 import { conversations, messages } from "@/db/schema"
 import { chatStream } from "@/lib/ollama"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 import crypto from "crypto"
 
 export async function POST(req: NextRequest) {
@@ -12,24 +12,29 @@ export async function POST(req: NextRequest) {
     return new Response("Missing required fields", { status: 400 })
   }
 
-  if (!regenerate) {
-    const userMessageId = crypto.randomUUID()
-    const now = new Date().toISOString()
+  const sessionId = req.headers.get("x-session-id") || ""
+  if (!sessionId) {
+    return new Response("Session ID required", { status: 401 })
+  }
 
+  const [conv] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.sessionId, sessionId)))
+    .limit(1)
+
+  if (!conv) {
+    return new Response("Conversation not found", { status: 404 })
+  }
+
+  if (!regenerate) {
     await db.insert(messages).values({
-      id: userMessageId,
+      id: crypto.randomUUID(),
       conversationId,
       role: "user",
       content,
-      createdAt: now,
     })
   }
-
-  const conv = await db
-    .select()
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .get()
 
   const history = await db
     .select()
@@ -66,7 +71,6 @@ export async function POST(req: NextRequest) {
           conversationId,
           role: "assistant",
           content: fullResponse,
-          createdAt: new Date().toISOString(),
         })
 
         controller.enqueue(

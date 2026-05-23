@@ -4,6 +4,21 @@ import { createContext, useContext, useReducer, useCallback, useEffect, useRef, 
 import type { Conversation, Message, ClassificationResult, PullProgress } from "@/types"
 import { classifyPrompt } from "@/lib/classifier"
 
+function getOrCreateSessionId(): string {
+  if (typeof window === "undefined") return ""
+  const existing = localStorage.getItem("vaultchat_session")
+  if (existing) return existing
+  const id = crypto.randomUUID()
+  localStorage.setItem("vaultchat_session", id)
+  return id
+}
+
+function getSessionHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {}
+  const sessionId = getOrCreateSessionId()
+  return { "X-Session-Id": sessionId, "Content-Type": "application/json" }
+}
+
 interface ModelSwitchInfo {
   detected: ClassificationResult
   switched: boolean
@@ -211,7 +226,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const loadConversations = useCallback(async () => {
     try {
-      const res = await fetch("/api/conversations")
+      const res = await fetch("/api/conversations", { headers: getSessionHeaders() })
       const data = await res.json()
       dispatch({ type: "SET_CONVERSATIONS", conversations: data.conversations })
     } catch {
@@ -221,7 +236,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const selectConversation = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/conversations/${id}`)
+      const res = await fetch(`/api/conversations/${id}`, { headers: getSessionHeaders() })
       const data = await res.json()
       dispatch({ type: "SET_ACTIVE", id, messages: data.messages })
     } catch {
@@ -232,7 +247,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const newConversation = useCallback(async (model = "llama3.2:3b") => {
     const res = await fetch("/api/conversations", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getSessionHeaders(),
       body: JSON.stringify({ model }),
     })
     const data = await res.json()
@@ -244,7 +259,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const switchModel = useCallback(async (id: string, model: string) => {
     await fetch(`/api/conversations/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: getSessionHeaders(),
       body: JSON.stringify({ model }),
     })
     dispatch({ type: "UPDATE_CONVERSATION_MODEL", id, model })
@@ -268,7 +283,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (!conversationId) {
       const res = await fetch("/api/conversations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getSessionHeaders(),
         body: JSON.stringify({ model: "llama3.2:3b" }),
       })
       const data = await res.json()
@@ -295,7 +310,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const title = clean.length > 50 ? clean.slice(0, 50).trimEnd() + "..." : clean
         await fetch(`/api/conversations/${conversationId}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
+          headers: getSessionHeaders(),
           body: JSON.stringify({ title }),
         })
         await loadConversations()
@@ -364,7 +379,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getSessionHeaders(),
         body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate }),
         signal: abortController.signal,
       })
@@ -439,21 +454,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const updateSystemPrompt = useCallback(async (id: string, systemPrompt: string) => {
     await fetch(`/api/conversations/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: getSessionHeaders(),
       body: JSON.stringify({ systemPrompt }),
     })
     dispatch({ type: "UPDATE_SYSTEM_PROMPT", id, systemPrompt })
   }, [])
 
   const deleteConversation = useCallback(async (id: string) => {
-    await fetch(`/api/conversations/${id}`, { method: "DELETE" })
+    await fetch(`/api/conversations/${id}`, { headers: getSessionHeaders(), method: "DELETE" })
     dispatch({ type: "REMOVE_CONVERSATION", id })
   }, [])
 
   const renameConversation = useCallback(async (id: string, title: string) => {
     await fetch(`/api/conversations/${id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: getSessionHeaders(),
       body: JSON.stringify({ title }),
     })
     await loadConversations()

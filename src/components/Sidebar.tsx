@@ -118,7 +118,8 @@ export function Sidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        window.open(`/api/export?id=${conv.id}`, "_blank")
+                        const sessionId = localStorage.getItem("vaultchat_session") || ""
+                        window.open(`/api/export?id=${conv.id}&sessionId=${sessionId}`, "_blank")
                       }}
                       className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-blue-500 transition-all shrink-0"
                       title="Export as Markdown"

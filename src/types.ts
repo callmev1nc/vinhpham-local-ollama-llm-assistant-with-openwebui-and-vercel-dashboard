@@ -1,5 +1,6 @@
 export interface Conversation {
   id: string
+  sessionId: string
   title: string
   model: string
   systemPrompt?: string | null

@@ -7,7 +7,8 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "Model name required" }), { status: 400 })
   }
 
-  const ollamaRes = await fetch("http://localhost:11434/api/pull", {
+  const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || "http://localhost:11434"
+  const ollamaRes = await fetch(`${OLLAMA_BASE}/api/pull`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: model, stream: true }),

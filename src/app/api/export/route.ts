@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { db } from "@/db"
 import { conversations, messages } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id")
@@ -9,11 +9,13 @@ export async function GET(req: NextRequest) {
     return new Response("Missing id parameter", { status: 400 })
   }
 
-  const conv = await db
+  const sessionId = req.headers.get("x-session-id") || req.nextUrl.searchParams.get("sessionId") || ""
+
+  const [conv] = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.id, id))
-    .get()
+    .where(and(eq(conversations.id, id), eq(conversations.sessionId, sessionId)))
+    .limit(1)
 
   if (!conv) {
     return new Response("Not found", { status: 404 })

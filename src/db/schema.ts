@@ -1,20 +1,21 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
-export const conversations = sqliteTable("conversations", {
+export const conversations = pgTable("conversations", {
   id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
   title: text("title").notNull().default("New conversation"),
   model: text("model").notNull().default("llama3.2:3b"),
   systemPrompt: text("system_prompt"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 })
 
-export const messages = sqliteTable("messages", {
+export const messages = pgTable("messages", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id")
     .notNull()
     .references(() => conversations.id, { onDelete: "cascade" }),
   role: text("role", { enum: ["user", "assistant", "system"] }).notNull(),
   content: text("content").notNull(),
-  createdAt: text("created_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 })

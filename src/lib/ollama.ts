@@ -1,6 +1,6 @@
 import type { OllamaModel, OllamaChatRequest, OllamaChatResponse, ModelInfo, TaskCategory } from "@/types"
 
-const OLLAMA_BASE = "http://localhost:11434"
+const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || "http://localhost:11434"
 
 export const MODEL_INFO: Record<string, ModelInfo> = {
   "llama3.2:3b": {

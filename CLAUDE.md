@@ -1,14 +1,15 @@
 # VaultChat
 
 ## Project Overview
-A fully private AI assistant running via Ollama, accessible in the browser.
-Your data never leaves your device. Supports chat, code assistance, and file analysis — all offline.
+A private AI assistant powered by Ollama + Postgres, deployable on Vercel with a self-hosted Ollama backend.
+Session-based isolation keeps each user's conversations separate without authentication.
 
 ## Tech Stack
 - Frontend: Next.js 16 (App Router), Tailwind CSS v4
 - Backend: Next.js API routes (SSE streaming)
-- Database: SQLite via Drizzle ORM
-- AI: Ollama REST API (localhost:11434)
+- Database: PostgreSQL via Drizzle ORM + @vercel/postgres
+- AI: Ollama REST API (configurable via `OLLAMA_BASE_URL`)
+- Session: Browser-generated UUID in `localStorage`, sent as `X-Session-Id` header
 - Language: TypeScript (strict mode)
 
 ## Default Models
@@ -27,6 +28,7 @@ Your data never leaves your device. Supports chat, code assistance, and file ana
 - **Auto-title** — conversations are automatically titled from the first message
 - **Abort controller** — stream cancellation with stop button (Square icon) while generating
 - **Error boundary** — catches component crashes with reload UI
+- **Session isolation** — each browser gets a unique session ID, no auth needed
 
 ## Project Structure
 ```
@@ -35,8 +37,8 @@ src/
     api/
       chat/route.ts          — POST streaming chat via Ollama
       models/route.ts        — GET list installed models
-      conversations/route.ts — CRUD conversations
-      conversations/[id]/route.ts — GET/PATCH/DELETE conversation
+      conversations/route.ts — CRUD conversations (session-filtered)
+      conversations/[id]/route.ts — GET/PATCH/DELETE conversation (session-verified)
       pull/route.ts          — POST download a model (SSE)
       export/route.ts        — GET export conversation as Markdown
   components/    — React components
@@ -53,8 +55,8 @@ src/
     chat-context.tsx         — React context for all state management
     utils.ts                — cn() helper
   db/
-    schema.ts               — Drizzle schema (conversations, messages, systemPrompt column)
-    index.ts                — SQLite client
+    schema.ts               — Drizzle schema (conversations, messages)
+    index.ts                — Postgres Drizzle client (@vercel/postgres)
   types.ts                  — Shared TypeScript types
 ```
 
@@ -62,7 +64,11 @@ src/
 - `npm run dev` — Start dev server (localhost:3000)
 - `npm run build` — Production build
 - `npm run lint` — ESLint
-- `npx drizzle-kit push` — Apply schema changes (dev)
+- `npx drizzle-kit push` — Apply schema changes (requires POSTGRES_URL env var)
+
+## Environment Variables
+- `POSTGRES_URL` — Postgres connection string (auto-set by Vercel when using Neon/Postgres)
+- `OLLAMA_BASE_URL` — Self-hosted Ollama server URL (defaults to `http://localhost:11434`)
 
 ## Conventions
 - Use named exports for components
@@ -70,9 +76,10 @@ src/
 - All AI calls proxy through Ollama endpoint
 - No hardcoded secrets — everything runs locally
 - Keep API routes thin; logic in lib/ folder
+- All conversation-scoped API routes require `X-Session-Id` header
 
 ## Ollama API
-- Base: `http://localhost:11434`
+- Base: configurable via `OLLAMA_BASE_URL` env var, defaults to `http://localhost:11434`
 - `POST /api/chat` — streaming chat completions
 - `POST /api/generate` — non-chat generation
 - `GET /api/tags` — list installed models
@@ -92,3 +99,4 @@ src/
 - Streaming is essential — block prompts are very slow
 - Auto model download shows progress bar in ChatInput area
 - Auto-switch can be toggled off in the sidebar
+- Session isolation uses browser localStorage — clearing it starts a new session
