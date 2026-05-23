@@ -5,7 +5,7 @@ A fully local AI assistant running via Ollama, accessible in the browser.
 Supports chat, code assistance, and file analysis — all offline.
 
 ## Tech Stack
-- Frontend: Next.js 15+ (App Router), Tailwind CSS v4
+- Frontend: Next.js 16 (App Router), Tailwind CSS v4
 - Backend: Next.js API routes (SSE streaming)
 - Database: SQLite via Drizzle ORM
 - AI: Ollama REST API (localhost:11434)
@@ -19,6 +19,14 @@ Supports chat, code assistance, and file analysis — all offline.
 ## Key Features
 - **Auto model routing** — prompts are classified (code/analysis/creative/general) and the best model is switched automatically
 - **Auto model download** — missing models are pulled from Ollama on demand with a progress bar
+- **Privacy indicator** — "100% Private" badge with Shield icon in header and empty state
+- **Export as Markdown** — download any conversation as a .md file from the sidebar
+- **System prompts** — custom system prompt per-conversation, saved to DB and passed to Ollama
+- **Message regeneration** — RefreshCw button on last assistant message to regenerate
+- **Conversation search** — filter conversations by title in the sidebar
+- **Auto-title** — conversations are automatically titled from the first message
+- **Abort controller** — stream cancellation with stop button (Square icon) while generating
+- **Error boundary** — catches component crashes with reload UI
 
 ## Project Structure
 ```
@@ -28,13 +36,16 @@ src/
       chat/route.ts          — POST streaming chat via Ollama
       models/route.ts        — GET list installed models
       conversations/route.ts — CRUD conversations
+      conversations/[id]/route.ts — GET/PATCH/DELETE conversation
       pull/route.ts          — POST download a model (SSE)
+      export/route.ts        — GET export conversation as Markdown
   components/    — React components
-    ChatMessages.tsx         — message bubbles with markdown
-    ChatInput.tsx            — textarea + classification chip + download progress
-    Sidebar.tsx              — conversation list + settings
+    ErrorBoundary.tsx        — class-based error boundary
+    ChatMessages.tsx         — message bubbles with markdown + regeneration
+    ChatInput.tsx            — textarea + classification chip + download progress + stop button
+    Sidebar.tsx              — conversation list + search + export + settings
     ModelSelector.tsx        — dropdown with model badges
-    SettingsPanel.tsx        — auto-switch toggle
+    SettingsPanel.tsx        — auto-switch toggle + system prompt + model reset
     ThemeToggle.tsx          — dark/light mode
   lib/
     ollama.ts               — Ollama API client + MODEL_INFO registry
@@ -42,7 +53,7 @@ src/
     chat-context.tsx         — React context for all state management
     utils.ts                — cn() helper
   db/
-    schema.ts               — Drizzle schema (conversations, messages)
+    schema.ts               — Drizzle schema (conversations, messages, systemPrompt column)
     index.ts                — SQLite client
   types.ts                  — Shared TypeScript types
 ```

@@ -50,7 +50,7 @@ export function classifyPrompt(prompt: string): ClassificationResult {
 
   for (const pattern of PATTERNS) {
     let score = 0
-    let matched: string[] = []
+    const matched: string[] = []
 
     for (const keyword of pattern.keywords) {
       if (normalized.includes(keyword)) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from "react"
 import type { Conversation, Message, ClassificationResult, PullProgress } from "@/types"
 import { classifyPrompt } from "@/lib/classifier"
 
@@ -21,6 +21,7 @@ interface ChatState {
   error: string | null
   autoSwitch: boolean
   modelSwitch: ModelSwitchInfo | null
+  modelListVersion: number
 }
 
 type Action =
@@ -37,6 +38,9 @@ type Action =
   | { type: "SET_AUTO_SWITCH"; value: boolean }
   | { type: "SET_MODEL_SWITCH"; info: ModelSwitchInfo | null }
   | { type: "UPDATE_CONVERSATION_MODEL"; id: string; model: string }
+  | { type: "REMOVE_LAST_ASSISTANT" }
+  | { type: "UPDATE_SYSTEM_PROMPT"; id: string; systemPrompt: string }
+  | { type: "INCREMENT_MODEL_LIST_VERSION" }
 
 function reducer(state: ChatState, action: Action): ChatState {
   switch (action.type) {
@@ -96,6 +100,22 @@ function reducer(state: ChatState, action: Action): ChatState {
           c.id === action.id ? { ...c, model: action.model } : c
         ),
       }
+    case "REMOVE_LAST_ASSISTANT": {
+      const msgs = [...state.messages]
+      if (msgs.length > 0 && msgs[msgs.length - 1].role === "assistant") {
+        msgs.pop()
+      }
+      return { ...state, messages: msgs }
+    }
+    case "UPDATE_SYSTEM_PROMPT":
+      return {
+        ...state,
+        conversations: state.conversations.map((c) =>
+          c.id === action.id ? { ...c, systemPrompt: action.systemPrompt } : c
+        ),
+      }
+    case "INCREMENT_MODEL_LIST_VERSION":
+      return { ...state, modelListVersion: state.modelListVersion + 1 }
     default:
       return state
   }
@@ -107,20 +127,24 @@ interface ChatContextValue {
   loadConversations: () => Promise<void>
   selectConversation: (id: string) => Promise<void>
   newConversation: (model?: string) => Promise<string>
-  sendMessage: (content: string) => Promise<void>
+  sendMessage: (content: string, options?: { regenerate?: boolean }) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   renameConversation: (id: string, title: string) => Promise<void>
   setAutoSwitch: (value: boolean) => void
   switchModel: (id: string, model: string) => Promise<void>
+  stopStreaming: () => void
+  regenerateMessage: () => Promise<void>
+  updateSystemPrompt: (id: string, systemPrompt: string) => Promise<void>
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
 
-async function pullModel(name: string, onProgress: (p: PullProgress) => void): Promise<void> {
+async function pullModel(name: string, onProgress: (p: PullProgress) => void, signal?: AbortSignal): Promise<void> {
   const res = await fetch("/api/pull", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: name }),
+    signal,
   })
 
   if (!res.ok) {
@@ -156,8 +180,8 @@ async function pullModel(name: string, onProgress: (p: PullProgress) => void): P
           percent: parsed.total ? Math.round((parsed.completed / parsed.total) * 100) : undefined,
         }
         onProgress(progress)
-      } catch {
-        // skip malformed lines
+      } catch (e) {
+        if (!(e instanceof SyntaxError)) throw e
       }
     }
   }
@@ -174,7 +198,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     error: null,
     autoSwitch: true,
     modelSwitch: null,
+    modelListVersion: 0,
   })
+
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  })
+
+  const abortRef = useRef<AbortController | null>(null)
 
   const loadConversations = useCallback(async () => {
     try {
@@ -217,11 +250,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "UPDATE_CONVERSATION_MODEL", id, model })
   }, [])
 
-  const sendMessage = useCallback(async (content: string) => {
-    if (state.streaming || state.pulling) return
+  const stopStreaming = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    dispatch({ type: "SET_STREAMING", streaming: false })
+    dispatch({ type: "SET_PULLING", pulling: false })
+    dispatch({ type: "SET_PULL_PROGRESS", progress: null })
+  }, [])
 
-    // Ensure we have an active conversation — create one if needed
-    let conversationId: string = state.activeId!
+  const sendMessage = useCallback(async (content: string, options?: { regenerate?: boolean }) => {
+    const s = stateRef.current
+    if (s.streaming || s.pulling) return
+
+    let conversationId: string = s.activeId!
     if (!conversationId) {
       const res = await fetch("/api/conversations", {
         method: "POST",
@@ -234,24 +277,41 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       await loadConversations()
     }
 
-    dispatch({
-      type: "ADD_MESSAGE",
-      message: {
-        id: crypto.randomUUID(),
-        conversationId,
-        role: "user",
-        content,
-        createdAt: new Date().toISOString(),
-      },
-    })
+    if (!options?.regenerate) {
+      dispatch({
+        type: "ADD_MESSAGE",
+        message: {
+          id: crypto.randomUUID(),
+          conversationId,
+          role: "user",
+          content,
+          createdAt: new Date().toISOString(),
+        },
+      })
+
+      const isFirstMessage = s.messages.length === 0
+      if (isFirstMessage) {
+        const clean = content.replace(/\n/g, " ").trim()
+        const title = clean.length > 50 ? clean.slice(0, 50).trimEnd() + "..." : clean
+        await fetch(`/api/conversations/${conversationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        })
+        await loadConversations()
+      }
+    }
+
+    const abortController = new AbortController()
+    abortRef.current = abortController
 
     dispatch({ type: "SET_STREAMING", streaming: true })
     dispatch({ type: "SET_ERROR", error: null })
 
-    let model = state.conversations.find((c) => c.id === conversationId)?.model || "llama3.2:3b"
+    let model = s.conversations.find((c) => c.id === conversationId)?.model || "llama3.2:3b"
     let switched = false
 
-    if (state.autoSwitch) {
+    if (s.autoSwitch) {
       const classification = classifyPrompt(content)
       if (classification.category !== "general" && classification.model !== model) {
         dispatch({
@@ -272,33 +332,41 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "SET_MODEL_SWITCH", info: null })
     }
 
-    // Pull model if needed
     if (switched) {
       dispatch({ type: "SET_PULLING", pulling: true })
 
       try {
         await pullModel(model, (progress) => {
           dispatch({ type: "SET_PULL_PROGRESS", progress })
-        })
+        }, abortController.signal)
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          dispatch({ type: "SET_PULLING", pulling: false })
+          dispatch({ type: "SET_PULL_PROGRESS", progress: null })
+          dispatch({ type: "SET_STREAMING", streaming: false })
+          abortRef.current = null
+          return
+        }
         const msg = err instanceof Error ? err.message : "Failed to download model"
         dispatch({ type: "SET_ERROR", error: msg })
         dispatch({ type: "SET_PULLING", pulling: false })
         dispatch({ type: "SET_STREAMING", streaming: false })
+        abortRef.current = null
         return
       }
 
       dispatch({ type: "SET_PULL_PROGRESS", progress: null })
       dispatch({ type: "SET_PULLING", pulling: false })
+      dispatch({ type: "INCREMENT_MODEL_LIST_VERSION" })
       await switchModel(conversationId, model)
     }
 
-    // Send the actual message
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, model, content }),
+        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate }),
+        signal: abortController.signal,
       })
 
       if (!res.ok) {
@@ -339,13 +407,43 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to send message"
-      dispatch({ type: "SET_ERROR", error: msg })
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Stream was cancelled
+      } else {
+        const msg = err instanceof Error ? err.message : "Failed to send message"
+        dispatch({ type: "SET_ERROR", error: msg })
+      }
     }
 
+    abortRef.current = null
     dispatch({ type: "SET_STREAMING", streaming: false })
     await loadConversations()
-  }, [state.activeId, state.streaming, state.pulling, state.autoSwitch, state.conversations, loadConversations, switchModel])
+  }, [loadConversations, switchModel])
+
+  const regenerateMessage = useCallback(async () => {
+    const s = stateRef.current
+    if (s.streaming || s.pulling) return
+    if (s.messages.length < 2) return
+
+    const lastMsg = s.messages[s.messages.length - 1]
+    if (lastMsg.role !== "assistant") return
+
+    dispatch({ type: "REMOVE_LAST_ASSISTANT" })
+
+    const secondLast = s.messages[s.messages.length - 2]
+    if (secondLast.role === "user") {
+      await sendMessage(secondLast.content, { regenerate: true })
+    }
+  }, [sendMessage])
+
+  const updateSystemPrompt = useCallback(async (id: string, systemPrompt: string) => {
+    await fetch(`/api/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ systemPrompt }),
+    })
+    dispatch({ type: "UPDATE_SYSTEM_PROMPT", id, systemPrompt })
+  }, [])
 
   const deleteConversation = useCallback(async (id: string) => {
     await fetch(`/api/conversations/${id}`, { method: "DELETE" })
@@ -369,21 +467,31 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     loadConversations()
   }, [loadConversations])
 
+  useEffect(() => {
+    if (state.error) {
+      const timer = setTimeout(() => dispatch({ type: "SET_ERROR", error: null }), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [state.error])
+
+  const value: ChatContextValue = {
+    state,
+    dispatch,
+    loadConversations,
+    selectConversation,
+    newConversation,
+    sendMessage,
+    deleteConversation,
+    renameConversation,
+    setAutoSwitch,
+    switchModel,
+    stopStreaming,
+    regenerateMessage,
+    updateSystemPrompt,
+  }
+
   return (
-    <ChatContext.Provider
-      value={{
-        state,
-        dispatch,
-        loadConversations,
-        selectConversation,
-        newConversation,
-        sendMessage,
-        deleteConversation,
-        renameConversation,
-        setAutoSwitch,
-        switchModel,
-      }}
-    >
+    <ChatContext.Provider value={value}>
       {children}
     </ChatContext.Provider>
   )

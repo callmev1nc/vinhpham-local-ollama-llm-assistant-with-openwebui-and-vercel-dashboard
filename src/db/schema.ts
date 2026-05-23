@@ -4,6 +4,7 @@ export const conversations = sqliteTable("conversations", {
   id: text("id").primaryKey(),
   title: text("title").notNull().default("New conversation"),
   model: text("model").notNull().default("llama3.2:3b"),
+  systemPrompt: text("system_prompt"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 })

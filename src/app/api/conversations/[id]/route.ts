@@ -35,9 +35,14 @@ export async function PATCH(
   const { id } = await params
   const body = await req.json()
 
+  const updates: Record<string, string> = { updatedAt: new Date().toISOString() }
+  if (body.title !== undefined) updates.title = body.title
+  if (body.model !== undefined) updates.model = body.model
+  if (body.systemPrompt !== undefined) updates.systemPrompt = body.systemPrompt
+
   await db
     .update(conversations)
-    .set({ title: body.title, updatedAt: new Date().toISOString() })
+    .set(updates)
     .where(eq(conversations.id, id))
 
   return NextResponse.json({ success: true })

@@ -2,6 +2,7 @@ export interface Conversation {
   id: string
   title: string
   model: string
+  systemPrompt?: string | null
   createdAt: string
   updatedAt: string
 }

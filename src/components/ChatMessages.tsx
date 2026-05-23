@@ -4,24 +4,56 @@ import { useEffect, useRef } from "react"
 import { useChat } from "@/lib/chat-context"
 import ReactMarkdown from "react-markdown"
 import rehypeHighlight from "rehype-highlight"
+import { ShieldCheck, RefreshCw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+const suggestedPrompts = [
+  "Write a Python function to sort a list",
+  "Explain quantum computing in simple terms",
+  "Debug this: TypeError: undefined is not a function",
+  "Compare React and Vue.js",
+]
+
 export function ChatMessages() {
-  const { state } = useChat()
+  const { state, regenerateMessage, sendMessage } = useChat()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [state.messages])
 
+  const hasStreamingAssistant = state.messages.some(
+    (m) => m.role === "assistant" && m.content.length > 0 && m.id === "streaming"
+  )
+
   if (!state.activeId) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-400 dark:text-zinc-600">
-        <div className="text-center space-y-2">
-          <h2 className="text-2xl font-semibold text-zinc-600 dark:text-zinc-400">
-            Local AI Assistant
-          </h2>
-          <p className="text-sm">Select a conversation or start a new one</p>
+        <div className="text-center space-y-6">
+          <div className="text-center space-y-4">
+            <div className="flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm font-medium mx-auto w-fit">
+              <ShieldCheck size={16} />
+              100% Private · Local AI
+            </div>
+            <h2 className="text-2xl font-semibold text-zinc-600 dark:text-zinc-400">
+              Local AI Assistant
+            </h2>
+            <p className="text-sm">Select a conversation or start a new one</p>
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs text-zinc-400">Try asking:</p>
+            <div className="flex flex-wrap justify-center gap-2 max-w-md mx-auto">
+              {suggestedPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => sendMessage(prompt)}
+                  className="px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -34,11 +66,11 @@ export function ChatMessages() {
           <p>Send a message to start chatting</p>
         </div>
       )}
-      {state.messages.map((msg) => (
+      {state.messages.map((msg, idx) => (
         <div
           key={msg.id}
           className={cn(
-            "flex",
+            "flex items-end gap-2 group",
             msg.role === "user" ? "justify-end" : "justify-start"
           )}
         >
@@ -58,9 +90,21 @@ export function ChatMessages() {
               <p className="whitespace-pre-wrap">{msg.content}</p>
             )}
           </div>
+          {msg.role === "assistant" &&
+            idx === state.messages.length - 1 &&
+            !state.streaming &&
+            msg.content && (
+              <button
+                onClick={regenerateMessage}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all shrink-0"
+                title="Regenerate response"
+              >
+                <RefreshCw size={14} />
+              </button>
+            )}
         </div>
       ))}
-      {state.streaming && (
+      {state.streaming && !hasStreamingAssistant && (
         <div className="flex justify-start">
           <div className="max-w-[80%] rounded-2xl px-4 py-3 bg-zinc-100 dark:bg-zinc-800">
             <span className="inline-flex gap-1">

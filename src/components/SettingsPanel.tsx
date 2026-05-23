@@ -4,7 +4,8 @@ import { useChat } from "@/lib/chat-context"
 import { RotateCcw, Zap } from "lucide-react"
 
 export function SettingsPanel() {
-  const { state, setAutoSwitch } = useChat()
+  const { state, setAutoSwitch, switchModel, updateSystemPrompt } = useChat()
+  const activeConv = state.conversations.find((c) => c.id === state.activeId)
 
   return (
     <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3 mt-2">
@@ -37,17 +38,28 @@ export function SettingsPanel() {
           ? "Detects task type and switches to the best model automatically"
           : "Uses the currently selected model for all tasks"}
       </p>
+      {activeConv && (
+        <div className="mt-3 space-y-2">
+          <label className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block px-1">
+            System Prompt
+          </label>
+          <textarea
+            defaultValue={activeConv.systemPrompt || ""}
+            onBlur={(e) => {
+              if (state.activeId) {
+                updateSystemPrompt(state.activeId, e.target.value)
+              }
+            }}
+            placeholder="Optional: set a custom system prompt..."
+            rows={3}
+            className="w-full resize-none rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+          />
+        </div>
+      )}
       <button
         onClick={() => {
           if (state.activeId) {
-            const current = state.conversations.find((c) => c.id === state.activeId)
-            if (current && current.model !== "llama3.2:3b") {
-              fetch(`/api/conversations/${state.activeId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ model: "llama3.2:3b" }),
-              })
-            }
+            switchModel(state.activeId, "llama3.2:3b")
           }
         }}
         className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

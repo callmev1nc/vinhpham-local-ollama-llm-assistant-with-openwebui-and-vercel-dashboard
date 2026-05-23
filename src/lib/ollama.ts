@@ -1,4 +1,4 @@
-import type { OllamaModel, OllamaChatRequest, OllamaChatResponse, ModelInfo, TaskCategory, PullProgress } from "@/types"
+import type { OllamaModel, OllamaChatRequest, OllamaChatResponse, ModelInfo, TaskCategory } from "@/types"
 
 const OLLAMA_BASE = "http://localhost:11434"
 

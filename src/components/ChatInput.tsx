@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react"
 import { useChat } from "@/lib/chat-context"
 import { classifyPrompt } from "@/lib/classifier"
 import { getModelInfo, formatBytes } from "@/lib/ollama"
-import { Send, Plus, Zap, Brain, Code, Sparkles, Download } from "lucide-react"
+import { Send, Plus, Zap, Brain, Code, Sparkles, Download, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: string }> = {
@@ -15,7 +15,7 @@ const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: str
 }
 
 export function ChatInput() {
-  const { state, sendMessage, newConversation } = useChat()
+  const { state, sendMessage, newConversation, stopStreaming } = useChat()
   const [input, setInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -47,8 +47,6 @@ export function ChatInput() {
     }
   }
 
-  const activeConv = state.conversations.find((c) => c.id === state.activeId)
-  const currentInfo = activeConv ? getModelInfo(activeConv.model) : null
   const pp = state.pullProgress
 
   return (
@@ -126,13 +124,23 @@ export function ChatInput() {
               className="w-full resize-none rounded-xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 px-4 py-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500 focus:border-transparent disabled:opacity-50"
               disabled={state.streaming || state.pulling}
             />
-            <button
-              onClick={handleSubmit}
-              disabled={!input.trim() || state.streaming || state.pulling}
-              className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
-            >
-              <Send size={16} />
-            </button>
+            {state.streaming ? (
+              <button
+                onClick={stopStreaming}
+                className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                title="Stop generating"
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={!input.trim() || state.pulling}
+                className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+              >
+                <Send size={16} />
+              </button>
+            )}
           </div>
         </div>
 

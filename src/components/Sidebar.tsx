@@ -2,16 +2,22 @@
 
 import { useState } from "react"
 import { useChat } from "@/lib/chat-context"
-import { MessageSquare, Trash2, Plus, PanelLeftClose, PanelLeft, Check, X } from "lucide-react"
+import { MessageSquare, Trash2, Plus, PanelLeftClose, PanelLeft, Check, X, Download, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ModelSelector } from "./ModelSelector"
 import { SettingsPanel } from "./SettingsPanel"
 
-export function Sidebar() {
+export function Sidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { state, selectConversation, deleteConversation, renameConversation, newConversation } = useChat()
-  const [open, setOpen] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const filteredConversations = state.conversations.filter((conv) =>
+    searchQuery
+      ? conv.title.toLowerCase().includes(searchQuery.toLowerCase())
+      : true
+  )
 
   const handleStartRename = (id: string, currentTitle: string) => {
     setEditingId(id)
@@ -28,7 +34,7 @@ export function Sidebar() {
   return (
     <>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => onOpenChange(!open)}
         className="fixed top-4 left-4 z-50 p-2 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
       >
         {open ? <PanelLeftClose size={20} /> : <PanelLeft size={20} />}
@@ -51,13 +57,23 @@ export function Sidebar() {
 
           <ModelSelector />
 
+          <div className="relative mt-2">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search conversations..."
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+            />
+          </div>
+
           <div className="flex-1 overflow-y-auto space-y-1 mt-2">
-            {state.conversations.length === 0 && (
+            {filteredConversations.length === 0 && (
               <p className="text-xs text-zinc-400 text-center py-4">
-                No conversations yet
+                {searchQuery ? "No matches" : "No conversations yet"}
               </p>
             )}
-            {state.conversations.map((conv) => (
+            {filteredConversations.map((conv) => (
               <div
                 key={conv.id}
                 className={cn(
@@ -98,15 +114,27 @@ export function Sidebar() {
                   </span>
                 )}
                 {editingId !== conv.id && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteConversation(conv.id)
-                    }}
-                    className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 transition-all shrink-0"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.open(`/api/export?id=${conv.id}`, "_blank")
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-blue-500 transition-all shrink-0"
+                      title="Export as Markdown"
+                    >
+                      <Download size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteConversation(conv.id)
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 transition-all shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </>
                 )}
               </div>
             ))}

@@ -1,27 +1,35 @@
 import { NextRequest } from "next/server"
 import { db } from "@/db"
-import { messages } from "@/db/schema"
+import { conversations, messages } from "@/db/schema"
 import { chatStream } from "@/lib/ollama"
 import { eq } from "drizzle-orm"
 import crypto from "crypto"
 
 export async function POST(req: NextRequest) {
-  const { conversationId, model, content } = await req.json()
+  const { conversationId, model, content, regenerate } = await req.json()
 
   if (!conversationId || !model || !content) {
     return new Response("Missing required fields", { status: 400 })
   }
 
-  const userMessageId = crypto.randomUUID()
-  const now = new Date().toISOString()
+  if (!regenerate) {
+    const userMessageId = crypto.randomUUID()
+    const now = new Date().toISOString()
 
-  await db.insert(messages).values({
-    id: userMessageId,
-    conversationId,
-    role: "user",
-    content,
-    createdAt: now,
-  })
+    await db.insert(messages).values({
+      id: userMessageId,
+      conversationId,
+      role: "user",
+      content,
+      createdAt: now,
+    })
+  }
+
+  const conv = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .get()
 
   const history = await db
     .select()
@@ -29,10 +37,16 @@ export async function POST(req: NextRequest) {
     .where(eq(messages.conversationId, conversationId))
     .orderBy(messages.createdAt)
 
-  const ollamaMessages = history.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }))
+  const ollamaMessages: { role: string; content: string }[] = []
+  if (conv?.systemPrompt) {
+    ollamaMessages.push({ role: "system", content: conv.systemPrompt })
+  }
+  ollamaMessages.push(
+    ...history.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }))
+  )
 
   const encoder = new TextEncoder()
 

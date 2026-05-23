@@ -40,7 +40,7 @@ export function ModelSelector() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [state.modelListVersion])
 
   const activeConv = state.conversations.find((c) => c.id === state.activeId)
   const activeModelName = activeConv?.model || "llama3.2:3b"
