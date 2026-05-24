@@ -26,7 +26,7 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-zinc-400 dark:text-zinc-600">
-                  Running locally via Ollama
+                  Your Private AI
                 </span>
                 <ThemeToggle />
               </div>

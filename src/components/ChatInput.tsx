@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react"
 import { useChat } from "@/lib/chat-context"
 import { classifyPrompt } from "@/lib/classifier"
 import { getModelInfo, formatBytes } from "@/lib/ollama"
-import { Send, Plus, Zap, Brain, Code, Sparkles, Download, Square } from "lucide-react"
+import { Send, Zap, Brain, Code, Sparkles, Download, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: string }> = {
@@ -15,7 +15,7 @@ const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: str
 }
 
 export function ChatInput() {
-  const { state, sendMessage, newConversation, stopStreaming } = useChat()
+  const { state, sendMessage, stopStreaming } = useChat()
   const [input, setInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -51,7 +51,7 @@ export function ChatInput() {
 
   return (
     <div className="border-t border-zinc-200 dark:border-zinc-700 p-4 bg-white dark:bg-zinc-900">
-      <div className="max-w-3xl mx-auto space-y-2">
+      <div className="max-w-4xl mx-auto space-y-2">
         {pp && (
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 space-y-2">
             <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
@@ -80,7 +80,7 @@ export function ChatInput() {
         )}
 
         {classification && classification.category !== "general" && !state.pulling && (
-          <div className="flex items-center gap-2 px-1">
+          <div className="flex justify-center">
             {(() => {
               const meta = categoryMeta[classification.category]
               const Icon = meta.icon
@@ -100,52 +100,41 @@ export function ChatInput() {
           </div>
         )}
 
-        <div className="flex items-end gap-2">
-          <button
-            onClick={() => newConversation()}
-            className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
-            title="New conversation"
-            disabled={state.pulling}
-          >
-            <Plus size={20} />
-          </button>
-
-          <div className="flex-1 relative">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                state.pulling ? "Downloading model..." :
-                state.activeId ? "Type a message..." : "Start a new conversation..."
-              }
-              rows={1}
-              className="w-full resize-none rounded-xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 px-4 py-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500 focus:border-transparent disabled:opacity-50"
-              disabled={state.streaming || state.pulling}
-            />
-            {state.streaming ? (
-              <button
-                onClick={stopStreaming}
-                className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
-                title="Stop generating"
-              >
-                <Square size={16} />
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                disabled={!input.trim() || state.pulling}
-                className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
-              >
-                <Send size={16} />
-              </button>
-            )}
-          </div>
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              state.pulling ? "Downloading model..." :
+              state.activeId ? "Message VaultChat..." : "Start a new conversation..."
+            }
+            rows={1}
+            className="w-full resize-none rounded-2xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 px-4 py-3.5 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500 focus:border-transparent disabled:opacity-50 shadow-sm"
+            disabled={state.streaming || state.pulling}
+          />
+          {state.streaming ? (
+            <button
+              onClick={stopStreaming}
+              className="absolute right-3 bottom-3 p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors"
+              title="Stop generating"
+            >
+              <Square size={16} />
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={!input.trim() || state.pulling}
+              className="absolute right-3 bottom-3 p-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+            >
+              <Send size={16} />
+            </button>
+          )}
         </div>
 
         {state.modelSwitch && !state.pulling && (
-          <div className="flex items-center gap-2 px-1">
+          <div className="flex justify-center">
             <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
               <Zap size={12} className="text-amber-500" />
               <span>Auto-switched: {state.modelSwitch.from} → {state.modelSwitch.to}</span>

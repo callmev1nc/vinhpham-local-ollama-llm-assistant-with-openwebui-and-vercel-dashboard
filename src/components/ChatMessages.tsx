@@ -60,7 +60,8 @@ export function ChatMessages() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+    <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="max-w-4xl mx-auto space-y-5">
       {state.messages.length === 0 && (
         <div className="text-center text-zinc-400 dark:text-zinc-600 mt-12">
           <p>Send a message to start chatting</p>
@@ -76,7 +77,7 @@ export function ChatMessages() {
         >
           <div
             className={cn(
-              "max-w-[80%] rounded-2xl px-4 py-3 prose prose-sm dark:prose-invert",
+              "max-w-[70%] rounded-2xl px-4 py-3 prose prose-sm dark:prose-invert",
               msg.role === "user"
                 ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                 : "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
@@ -123,6 +124,7 @@ export function ChatMessages() {
         </div>
       )}
       <div ref={bottomRef} />
+      </div>
     </div>
   )
 }
