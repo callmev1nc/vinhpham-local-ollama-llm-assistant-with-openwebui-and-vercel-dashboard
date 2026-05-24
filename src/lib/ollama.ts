@@ -8,6 +8,23 @@ export function isGroq(): boolean {
   return GROQ_API_KEY.length > 0
 }
 
+const OLLAMA_TO_GROQ: Record<string, string> = {
+  "llama3.2:3b": "llama-3.3-70b-versatile",
+  "llama3.2:1b": "llama-3.2-1b-preview",
+  "llama3.1:8b": "llama-3.3-70b-versatile",
+  "qwen2.5:7b": "mixtral-8x7b-32768",
+  "qwen2.5:3b": "gemma2-9b-it",
+  "deepseek-coder:6.7b": "deepseek-r1-distill-llama-70b",
+  "codellama:7b": "deepseek-r1-distill-llama-70b",
+  "mistral:7b": "mixtral-8x7b-32768",
+  "phi3:mini": "llama-3.1-8b-instant",
+}
+
+export function remapModelForProvider(model: string): string {
+  if (!isGroq()) return model
+  return OLLAMA_TO_GROQ[model] || model
+}
+
 export const OLLAMA_MODEL_INFO: Record<string, ModelInfo> = {
   "llama3.2:3b": { label: "Llama 3.2", bestFor: ["general"], description: "Fast general chat & Q&A", color: "blue" },
   "llama3.2:1b": { label: "Llama 3.2 (1B)", bestFor: ["general"], description: "Ultra-lightweight chat", color: "blue" },

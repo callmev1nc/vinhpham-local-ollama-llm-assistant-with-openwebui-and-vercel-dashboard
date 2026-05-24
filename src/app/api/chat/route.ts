@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { db } from "@/db"
 import { conversations, messages } from "@/db/schema"
-import { chatStream } from "@/lib/ollama"
+import { chatStream, remapModelForProvider } from "@/lib/ollama"
 import { eq, and } from "drizzle-orm"
 import crypto from "crypto"
 
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       let fullResponse = ""
 
       try {
-        for await (const token of chatStream({ model, messages: ollamaMessages })) {
+        for await (const token of chatStream({ model: remapModelForProvider(model), messages: ollamaMessages })) {
           fullResponse += token
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token })}\n\n`))
         }
