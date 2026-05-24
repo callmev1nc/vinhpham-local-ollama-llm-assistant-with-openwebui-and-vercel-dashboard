@@ -14,8 +14,8 @@ const OLLAMA_TO_GROQ: Record<string, string> = {
   "llama3.1:8b": "llama-3.3-70b-versatile",
   "qwen2.5:7b": "mixtral-8x7b-32768",
   "qwen2.5:3b": "gemma2-9b-it",
-  "deepseek-coder:6.7b": "deepseek-r1-distill-llama-70b",
-  "codellama:7b": "deepseek-r1-distill-llama-70b",
+  "deepseek-coder:6.7b": "llama-3.3-70b-versatile",
+  "codellama:7b": "llama-3.3-70b-versatile",
   "mistral:7b": "mixtral-8x7b-32768",
   "phi3:mini": "llama-3.1-8b-instant",
 }
@@ -42,7 +42,7 @@ export const GROQ_MODEL_INFO: Record<string, ModelInfo> = {
   "llama-3.2-1b-preview": { label: "Llama 3.2 1B", bestFor: ["general"], description: "Ultra-fast lightweight", color: "sky" },
   "mixtral-8x7b-32768": { label: "Mixtral 8x7B", bestFor: ["analysis", "creative"], description: "Reasoning with large context", color: "purple" },
   "gemma2-9b-it": { label: "Gemma 2 9B", bestFor: ["analysis", "general"], description: "Great analysis & reasoning", color: "indigo" },
-  "deepseek-r1-distill-llama-70b": { label: "DeepSeek R1 70B", bestFor: ["code", "analysis"], description: "Advanced reasoning & code", color: "green" },
+  "deepseek-r1-distill-llama-70b": { label: "Llama 3.3 70B (code)", bestFor: ["code", "analysis"], description: "Code & reasoning (replaces decommissioned DeepSeek)", color: "green" },
 }
 
 export const MODEL_INFO: Record<string, ModelInfo> = { ...OLLAMA_MODEL_INFO, ...GROQ_MODEL_INFO }
