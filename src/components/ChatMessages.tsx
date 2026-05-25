@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react"
 import { useChat } from "@/lib/chat-context"
 import ReactMarkdown from "react-markdown"
 import rehypeHighlight from "rehype-highlight"
-import { ShieldCheck, RefreshCw } from "lucide-react"
+import { ShieldCheck, RefreshCw, FileText, Image as ImageIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const suggestedPrompts = [
@@ -88,7 +88,21 @@ export function ChatMessages() {
                 {msg.content || "..."}
               </ReactMarkdown>
             ) : (
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+              <div>
+                {(msg.attachmentType || msg.attachmentName) && (
+                  <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-700 rounded-lg px-2.5 py-1.5">
+                    {msg.attachmentType === "image" ? (
+                      <ImageIcon size={14} />
+                    ) : (
+                      <FileText size={14} />
+                    )}
+                    <span className="font-medium truncate max-w-[200px]">
+                      {msg.attachmentName || (msg.attachmentType === "image" ? "Image attached" : "File attached")}
+                    </span>
+                  </div>
+                )}
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+              </div>
             )}
           </div>
           {msg.role === "assistant" &&

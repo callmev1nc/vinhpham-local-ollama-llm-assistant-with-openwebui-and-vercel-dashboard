@@ -4,8 +4,9 @@ import { useState, useRef, useEffect, useMemo } from "react"
 import { useChat } from "@/lib/chat-context"
 import { classifyPrompt } from "@/lib/classifier"
 import { getModelInfo, formatBytes } from "@/lib/ollama"
-import { Send, Zap, Brain, Code, Sparkles, Download, Square } from "lucide-react"
+import { Send, Zap, Brain, Code, Sparkles, Download, Square, Paperclip, X, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
+import type { Attachment } from "@/types"
 
 const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: string }> = {
   code: { label: "Code task", icon: Code, color: "text-green-500 bg-green-100 dark:bg-green-900/30" },
@@ -14,10 +15,18 @@ const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: str
   general: { label: "General", icon: Zap, color: "text-blue-500 bg-blue-100 dark:bg-blue-900/30" },
 }
 
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+const ALLOWED_TEXT_EXTENSIONS = [".txt", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".md", ".csv", ".sql", ".css", ".html", ".sh", ".yaml", ".yml", ".toml", ".env", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".rb", ".php"]
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024
+const MAX_TEXT_SIZE = 500 * 1024
+
 export function ChatInput() {
   const { state, sendMessage, stopStreaming } = useChat()
   const [input, setInput] = useState("")
+  const [attachedFile, setAttachedFile] = useState<Attachment | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const classification = useMemo(() => {
     const trimmed = input.trim()
@@ -32,12 +41,58 @@ export function ChatInput() {
     }
   }, [input])
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setFileError(null)
+
+    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      if (file.size > MAX_IMAGE_SIZE) {
+        setFileError(`Image too large (max 4MB). File is ${formatBytes(file.size)}`)
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = () => {
+        const base64 = reader.result as string
+        setAttachedFile({ type: "image", name: file.name, data: base64 })
+      }
+      reader.readAsDataURL(file)
+    } else {
+      const ext = "." + file.name.split(".").pop()?.toLowerCase()
+      if (!ALLOWED_TEXT_EXTENSIONS.includes(ext)) {
+        setFileError(`Unsupported file type: ${ext}. Allowed: ${ALLOWED_TEXT_EXTENSIONS.join(", ")}`)
+        return
+      }
+      if (file.size > MAX_TEXT_SIZE) {
+        setFileError(`File too large (max 500KB). File is ${formatBytes(file.size)}`)
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = () => {
+        const text = reader.result as string
+        setAttachedFile({ type: "text", name: file.name, data: text })
+      }
+      reader.readAsText(file)
+    }
+
+    e.target.value = ""
+  }
+
+  const removeAttachment = () => {
+    setAttachedFile(null)
+    setFileError(null)
+  }
+
   const handleSubmit = async () => {
     const trimmed = input.trim()
-    if (!trimmed || state.streaming || state.pulling) return
+    if ((!trimmed && !attachedFile) || state.streaming || state.pulling) return
 
+    const file = attachedFile
+    setAttachedFile(null)
+    setFileError(null)
     setInput("")
-    await sendMessage(trimmed)
+    await sendMessage(trimmed, file ? { attachment: file } : undefined)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -100,6 +155,46 @@ export function ChatInput() {
           </div>
         )}
 
+        {fileError && (
+          <div className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
+            {fileError}
+          </div>
+        )}
+
+        {attachedFile && (
+          <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl px-3 py-2 border border-zinc-200 dark:border-zinc-700">
+            {attachedFile.type === "image" ? (
+              <div className="relative group">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={attachedFile.data}
+                  alt={attachedFile.name}
+                  className="h-16 w-auto rounded-lg object-cover border border-zinc-200 dark:border-zinc-600"
+                />
+                <button
+                  onClick={removeAttachment}
+                  className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors shadow-sm"
+                  title="Remove image"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg px-2.5 py-1.5 text-xs">
+                <FileText size={14} className="text-blue-500" />
+                <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[200px]">{attachedFile.name}</span>
+                <button
+                  onClick={removeAttachment}
+                  className="p-0.5 rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                  title="Remove file"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="relative">
           <textarea
             ref={textareaRef}
@@ -111,26 +206,45 @@ export function ChatInput() {
               state.activeId ? "Message VaultChat..." : "Start a new conversation..."
             }
             rows={1}
-            className="w-full resize-none rounded-2xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 px-4 py-3.5 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500 focus:border-transparent disabled:opacity-50 shadow-sm"
+            className="w-full resize-none rounded-2xl border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 px-4 py-3.5 pr-24 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-500 focus:border-transparent disabled:opacity-50 shadow-sm"
             disabled={state.streaming || state.pulling}
           />
-          {state.streaming ? (
-            <button
-              onClick={stopStreaming}
-              className="absolute right-3 bottom-3 p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors"
-              title="Stop generating"
-            >
-              <Square size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={!input.trim() || state.pulling}
-              className="absolute right-3 bottom-3 p-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
-            >
-              <Send size={16} />
-            </button>
-          )}
+          <div className="absolute right-3 bottom-3 flex items-center gap-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,.txt,.py,.js,.ts,.jsx,.tsx,.json,.md,.csv,.sql,.css,.html,.sh,.yaml,.yml,.toml,.env,.rs,.go,.java,.c,.cpp,.h,.rb,.php"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            {!state.streaming && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={state.pulling}
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors disabled:opacity-30"
+                title="Attach file"
+              >
+                <Paperclip size={16} />
+              </button>
+            )}
+            {state.streaming ? (
+              <button
+                onClick={stopStreaming}
+                className="p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors"
+                title="Stop generating"
+              >
+                <Square size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={(!input.trim() && !attachedFile) || state.pulling}
+                className="p-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+              >
+                <Send size={16} />
+              </button>
+            )}
+          </div>
         </div>
 
         {state.modelSwitch && !state.pulling && (

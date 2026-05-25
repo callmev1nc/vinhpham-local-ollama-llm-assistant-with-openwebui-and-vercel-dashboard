@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from "react"
-import type { Conversation, Message, ClassificationResult, PullProgress } from "@/types"
+import type { Conversation, Message, ClassificationResult, PullProgress, Attachment } from "@/types"
 import { classifyPrompt } from "@/lib/classifier"
 import { getDefaultModel } from "@/lib/ollama"
 
@@ -143,7 +143,7 @@ interface ChatContextValue {
   loadConversations: () => Promise<void>
   selectConversation: (id: string) => Promise<void>
   newConversation: (model?: string) => Promise<string>
-  sendMessage: (content: string, options?: { regenerate?: boolean }) => Promise<void>
+  sendMessage: (content: string, options?: { regenerate?: boolean; attachment?: Attachment }) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   renameConversation: (id: string, title: string) => Promise<void>
   setAutoSwitch: (value: boolean) => void
@@ -276,9 +276,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_PULL_PROGRESS", progress: null })
   }, [])
 
-  const sendMessage = useCallback(async (content: string, options?: { regenerate?: boolean }) => {
+  const sendMessage = useCallback(async (content: string, options?: { regenerate?: boolean; attachment?: Attachment }) => {
     const s = stateRef.current
     if (s.streaming || s.pulling) return
+
+    const attachment = options?.attachment
 
     let conversationId: string = s.activeId!
     if (!conversationId) {
@@ -302,6 +304,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           role: "user",
           content,
           createdAt: new Date().toISOString(),
+          attachmentType: attachment?.type || null,
+          attachmentName: attachment?.name || null,
         },
       })
 
@@ -381,7 +385,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: getSessionHeaders(),
-        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate }),
+        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate, attachment }),
         signal: abortController.signal,
       })
 

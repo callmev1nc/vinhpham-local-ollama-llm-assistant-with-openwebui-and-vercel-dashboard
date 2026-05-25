@@ -43,12 +43,14 @@ export const GROQ_MODEL_INFO: Record<string, ModelInfo> = {
   "mixtral-8x7b-32768": { label: "Mixtral 8x7B", bestFor: ["analysis", "creative"], description: "Reasoning with large context", color: "purple" },
   "gemma2-9b-it": { label: "Gemma 2 9B", bestFor: ["analysis", "general"], description: "Great analysis & reasoning", color: "indigo" },
   "deepseek-r1-distill-llama-70b": { label: "Llama 3.3 70B (code)", bestFor: ["code", "analysis"], description: "Code & reasoning (replaces decommissioned DeepSeek)", color: "green" },
+  "meta-llama/llama-4-scout-17b-16e-instruct": { label: "Llama 4 Scout", bestFor: ["general", "analysis"], description: "Vision + text, 128K context", color: "teal" },
 }
 
 export const MODEL_INFO: Record<string, ModelInfo> = { ...OLLAMA_MODEL_INFO, ...GROQ_MODEL_INFO }
 
 const GROQ_DEFAULT = "llama-3.3-70b-versatile"
 const OLLAMA_DEFAULT = "llama3.2:3b"
+const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 export function getDefaultModel(): string {
   return isGroq() ? GROQ_DEFAULT : OLLAMA_DEFAULT
@@ -66,6 +68,14 @@ export function getModelForTask(category: TaskCategory): string {
 
 export function getModelInfo(name: string): ModelInfo | null {
   return MODEL_INFO[name] || OLLAMA_MODEL_INFO[name.includes(":") ? name : `${name}:latest`] || null
+}
+
+export function isVisionModel(model: string): boolean {
+  return model === VISION_MODEL
+}
+
+export function getVisionModel(): string {
+  return VISION_MODEL
 }
 
 export function formatBytes(bytes: number): string {
@@ -89,10 +99,21 @@ export async function listOllamaModels(): Promise<OllamaModel[]> {
 }
 
 export async function* ollamaChatStream(body: OllamaChatRequest): AsyncGenerator<string> {
+  const ollamaBody = {
+    ...body,
+    messages: body.messages.map((m) => ({
+      role: m.role,
+      content: Array.isArray(m.content)
+        ? m.content.find((c: { type: string }) => c.type === "text")?.text || ""
+        : m.content,
+    })),
+    stream: true,
+  }
+
   const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, stream: true }),
+    body: JSON.stringify(ollamaBody),
   })
 
   if (!res.ok) {
@@ -150,7 +171,9 @@ export async function listGroqModels(): Promise<OllamaModel[]> {
     }))
 }
 
-export async function* groqChatStream(messages: { role: string; content: string }[], model: string): AsyncGenerator<string> {
+type GroqMessageContent = string | { type: string; text?: string; image_url?: { url: string } }[]
+
+export async function* groqChatStream(messages: { role: string; content: GroqMessageContent }[], model: string): AsyncGenerator<string> {
   const res = await fetch(`${GROQ_BASE}/chat/completions`, {
     method: "POST",
     headers: {

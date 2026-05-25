@@ -8,12 +8,20 @@ export interface Conversation {
   updatedAt: string
 }
 
+export interface Attachment {
+  type: "image" | "text"
+  name: string
+  data?: string
+}
+
 export interface Message {
   id: string
   conversationId: string
   role: 'user' | 'assistant' | 'system'
   content: string
   createdAt: string
+  attachmentType?: string | null
+  attachmentName?: string | null
 }
 
 export interface OllamaModel {
@@ -22,9 +30,11 @@ export interface OllamaModel {
   size: number
 }
 
+export type MultimodalContent = { type: string; text?: string; image_url?: { url: string } }[]
+
 export interface OllamaChatRequest {
   model: string
-  messages: { role: string; content: string }[]
+  messages: { role: string; content: string | MultimodalContent }[]
   stream?: boolean
 }
 
