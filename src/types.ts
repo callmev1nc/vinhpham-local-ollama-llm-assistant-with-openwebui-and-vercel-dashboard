@@ -9,9 +9,10 @@ export interface Conversation {
 }
 
 export interface Attachment {
-  type: "image" | "text"
+  type: "image" | "text" | "document"
   name: string
   data?: string
+  mime?: string
 }
 
 export interface Message {
@@ -22,6 +23,7 @@ export interface Message {
   createdAt: string
   attachmentType?: string | null
   attachmentName?: string | null
+  attachments?: Attachment[]
 }
 
 export interface OllamaModel {
@@ -52,6 +54,13 @@ export interface ModelInfo {
   bestFor: TaskCategory[]
   description: string
   color: string
+  /** True for vision-capable (multimodal) models. */
+  vision?: boolean
+}
+
+export interface AppConfig {
+  groq: boolean
+  visionModel: string
 }
 
 export interface ClassificationResult {

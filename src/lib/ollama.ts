@@ -1,4 +1,4 @@
-import type { OllamaModel, OllamaChatRequest, OllamaChatResponse, ModelInfo, TaskCategory } from "@/types"
+import type { OllamaModel, OllamaChatRequest, OllamaChatResponse, ModelInfo, TaskCategory, MultimodalContent } from "@/types"
 
 const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || "http://localhost:11434"
 const GROQ_API_KEY = process.env.GROQ_API_KEY || ""
@@ -34,6 +34,9 @@ export const OLLAMA_MODEL_INFO: Record<string, ModelInfo> = {
   "codellama:7b": { label: "Code Llama", bestFor: ["code"], description: "Code completion & review", color: "green" },
   "mistral:7b": { label: "Mistral", bestFor: ["general", "analysis"], description: "Great all-rounder", color: "indigo" },
   "phi3:mini": { label: "Phi-3 Mini", bestFor: ["general", "code"], description: "Tiny but capable", color: "amber" },
+  "llama3.2-vision:11b": { label: "Llama 3.2 Vision", bestFor: ["general"], description: "Local vision · image analysis", color: "teal", vision: true },
+  "llava:13b": { label: "LLaVA 13B", bestFor: ["general"], description: "Local vision · image analysis", color: "teal", vision: true },
+  "minicpm-v:8b": { label: "MiniCPM-V 8B", bestFor: ["general"], description: "Local vision · compact", color: "teal", vision: true },
 }
 
 export const GROQ_MODEL_INFO: Record<string, ModelInfo> = {
@@ -43,7 +46,7 @@ export const GROQ_MODEL_INFO: Record<string, ModelInfo> = {
   "mixtral-8x7b-32768": { label: "Mixtral 8x7B", bestFor: ["analysis", "creative"], description: "Reasoning with large context", color: "purple" },
   "gemma2-9b-it": { label: "Gemma 2 9B", bestFor: ["analysis", "general"], description: "Great analysis & reasoning", color: "indigo" },
   "deepseek-r1-distill-llama-70b": { label: "Llama 3.3 70B (code)", bestFor: ["code", "analysis"], description: "Code & reasoning (replaces decommissioned DeepSeek)", color: "green" },
-  "meta-llama/llama-4-scout-17b-16e-instruct": { label: "Llama 4 Scout", bestFor: ["general", "analysis"], description: "Vision + text, 128K context", color: "teal" },
+  "meta-llama/llama-4-scout-17b-16e-instruct": { label: "Llama 4 Scout", bestFor: ["general", "analysis"], description: "Vision + text, 128K context", color: "teal", vision: true },
 }
 
 export const MODEL_INFO: Record<string, ModelInfo> = { ...OLLAMA_MODEL_INFO, ...GROQ_MODEL_INFO }
@@ -51,6 +54,7 @@ export const MODEL_INFO: Record<string, ModelInfo> = { ...OLLAMA_MODEL_INFO, ...
 const GROQ_DEFAULT = "llama-3.3-70b-versatile"
 const OLLAMA_DEFAULT = "llama3.2:3b"
 const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+const LOCAL_VISION_DEFAULT = "llama3.2-vision:11b"
 
 export function getDefaultModel(): string {
   return isGroq() ? GROQ_DEFAULT : OLLAMA_DEFAULT
@@ -71,11 +75,19 @@ export function getModelInfo(name: string): ModelInfo | null {
 }
 
 export function isVisionModel(model: string): boolean {
-  return model === VISION_MODEL
+  return MODEL_INFO[model]?.vision === true
+}
+
+export function getGroqVisionModel(): string {
+  return VISION_MODEL
+}
+
+export function getLocalVisionModel(): string {
+  return process.env.OLLAMA_VISION_MODEL || LOCAL_VISION_DEFAULT
 }
 
 export function getVisionModel(): string {
-  return VISION_MODEL
+  return isGroq() ? getGroqVisionModel() : getLocalVisionModel()
 }
 
 export function formatBytes(bytes: number): string {
@@ -98,15 +110,30 @@ export async function listOllamaModels(): Promise<OllamaModel[]> {
   }))
 }
 
+/**
+ * Convert a Groq/OpenAI-style multimodal message into Ollama's native format.
+ * Ollama's /api/chat puts images in a sibling `images: string[]` array of RAW
+ * base64 (no `data:...;base64,` prefix), unlike Groq's
+ * `content: [{type:"image_url", image_url:{url}}]` array. Plain text passes through.
+ */
+function toOllamaMessage(m: { role: string; content: string | MultimodalContent }) {
+  if (!Array.isArray(m.content)) return { role: m.role, content: m.content }
+  let text = ""
+  const images: string[] = []
+  for (const part of m.content) {
+    if (part.type === "text" && part.text) {
+      text += part.text
+    } else if (part.type === "image_url" && part.image_url?.url) {
+      images.push(part.image_url.url.replace(/^data:[^;]+;base64,/, ""))
+    }
+  }
+  return { role: m.role, content: text, ...(images.length ? { images } : {}) }
+}
+
 export async function* ollamaChatStream(body: OllamaChatRequest): AsyncGenerator<string> {
   const ollamaBody = {
     ...body,
-    messages: body.messages.map((m) => ({
-      role: m.role,
-      content: Array.isArray(m.content)
-        ? m.content.find((c: { type: string }) => c.type === "text")?.text || ""
-        : m.content,
-    })),
+    messages: body.messages.map(toOllamaMessage),
     stream: true,
   }
 

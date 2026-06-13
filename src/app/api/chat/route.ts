@@ -1,14 +1,22 @@
 import { NextRequest } from "next/server"
 import { db } from "@/db"
-import { conversations, messages } from "@/db/schema"
-import { chatStream, remapModelForProvider, isGroq, isVisionModel, getVisionModel } from "@/lib/ollama"
-import { eq, and } from "drizzle-orm"
+import { conversations, messages, attachments as attachmentsTable } from "@/db/schema"
+import { chatStream, remapModelForProvider, isVisionModel, getVisionModel } from "@/lib/ollama"
+import { extractDocumentText } from "@/lib/documents"
+import type { MultimodalContent, Attachment } from "@/types"
+import { eq, and, inArray } from "drizzle-orm"
 import crypto from "crypto"
 
 export async function POST(req: NextRequest) {
-  const { conversationId, model, content, regenerate, attachment } = await req.json()
+  const { conversationId, model, content, regenerate, attachments } = (await req.json()) as {
+    conversationId?: string
+    model?: string
+    content?: string
+    regenerate?: boolean
+    attachments?: Attachment[]
+  }
 
-  if (!conversationId || !model || (!content && !attachment)) {
+  if (!conversationId || !model || (!content && !(attachments && attachments.length))) {
     return new Response("Missing required fields", { status: 400 })
   }
 
@@ -27,30 +35,58 @@ export async function POST(req: NextRequest) {
     return new Response("Conversation not found", { status: 404 })
   }
 
-  const userText = content || (attachment?.type === "image" ? "Describe this image" : "Analyze this file")
-  let finalContent = content || userText
+  // Process attachments: images route to a vision model (Groq Llama 4 Scout or a
+  // local Ollama vision model); documents are extracted; text/code is inlined.
+  const list = attachments ?? []
+  const imageCount = list.filter((a) => a.type === "image").length
   let finalModel = model
 
-  if (attachment) {
-    if (attachment.type === "image") {
-      if (!isGroq()) {
-        return new Response("Image analysis requires a Groq API key (GROQ_API_KEY)", { status: 400 })
-      }
-      finalModel = getVisionModel()
-    } else if (attachment.type === "text" && attachment.data) {
-      finalContent = `[File: ${attachment.name}]\n\`\`\`\n${attachment.data}\n\`\`\`\n\n---\n\n${content}`
+  const docBlocks: string[] = []
+  const persisted: { type: Attachment["type"]; name: string; mime: string | null; data: string }[] = []
+
+  for (const a of list) {
+    if (a.type === "image" && a.data) {
+      persisted.push({ type: "image", name: a.name, mime: a.mime ?? null, data: a.data })
+    } else if (a.type === "document" && a.data) {
+      const bytes = Buffer.from(a.data, "base64")
+      const docText = await extractDocumentText(a.name, bytes)
+      docBlocks.push(`[File: ${a.name}]\n\`\`\`\n${docText}\n\`\`\``)
+      persisted.push({ type: "document", name: a.name, mime: a.mime ?? null, data: docText })
+    } else if (a.type === "text" && a.data) {
+      docBlocks.push(`[File: ${a.name}]\n\`\`\`\n${a.data}\n\`\`\``)
+      persisted.push({ type: "text", name: a.name, mime: a.mime ?? null, data: a.data })
     }
   }
 
+  let finalContent: string
+  if (docBlocks.length > 0) {
+    finalContent = `${docBlocks.join("\n\n---\n\n")}\n\n---\n\n${content || "Analyze these files"}`
+  } else if (content) {
+    finalContent = content
+  } else {
+    finalContent = imageCount > 1 ? "Describe these images" : "Describe this image"
+  }
+
   if (!regenerate) {
+    const userMessageId = crypto.randomUUID()
     await db.insert(messages).values({
-      id: crypto.randomUUID(),
+      id: userMessageId,
       conversationId,
       role: "user",
       content: finalContent,
-      attachmentType: attachment?.type || null,
-      attachmentName: attachment?.name || null,
+      attachmentType: persisted[0]?.type ?? null,
+      attachmentName: persisted[0]?.name ?? null,
     })
+    for (const a of persisted) {
+      await db.insert(attachmentsTable).values({
+        id: crypto.randomUUID(),
+        messageId: userMessageId,
+        type: a.type,
+        name: a.name,
+        mime: a.mime,
+        data: a.data,
+      })
+    }
   }
 
   const history = await db
@@ -59,27 +95,44 @@ export async function POST(req: NextRequest) {
     .where(eq(messages.conversationId, conversationId))
     .orderBy(messages.createdAt)
 
-  const ollamaMessages: { role: string; content: string | { type: string; text?: string; image_url?: { url: string } }[] }[] = []
+  // Load attachments for all history messages in a single query (no N+1).
+  const messageIds = history.map((m) => m.id)
+  const allAttachments = messageIds.length
+    ? await db.select().from(attachmentsTable).where(inArray(attachmentsTable.messageId, messageIds))
+    : []
+  const attachmentsByMessage = new Map<string, typeof allAttachments>()
+  for (const a of allAttachments) {
+    const arr = attachmentsByMessage.get(a.messageId) ?? []
+    arr.push(a)
+    attachmentsByMessage.set(a.messageId, arr)
+  }
+
+  // Route to a vision model if the latest user turn includes an image — covers
+  // both fresh sends and regenerations, since images are persisted to history.
+  const lastUserMsg = [...history].reverse().find((m) => m.role === "user")
+  if (lastUserMsg && (attachmentsByMessage.get(lastUserMsg.id) ?? []).some((a) => a.type === "image")) {
+    finalModel = getVisionModel()
+  }
+
+  // Build provider messages. User messages with image attachments become
+  // multimodal (text + image_url) so image context carries across turns; the
+  // just-inserted message is included via the history+attachments join above.
+  const ollamaMessages: { role: string; content: string | MultimodalContent }[] = []
   if (conv?.systemPrompt) {
     ollamaMessages.push({ role: "system", content: conv.systemPrompt })
   }
-  ollamaMessages.push(
-    ...history.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }))
-  )
-
-  if (attachment?.type === "image" && attachment.data) {
-    const lastUserIdx = ollamaMessages.length - 1
-    if (ollamaMessages[lastUserIdx]?.role === "user") {
-      ollamaMessages[lastUserIdx] = {
+  for (const m of history) {
+    const imgs = (attachmentsByMessage.get(m.id) ?? []).filter((a) => a.type === "image")
+    if (m.role === "user" && imgs.length > 0) {
+      ollamaMessages.push({
         role: "user",
         content: [
-          { type: "text", text: userText },
-          { type: "image_url", image_url: { url: attachment.data } },
+          { type: "text", text: m.content },
+          ...imgs.map((a) => ({ type: "image_url" as const, image_url: { url: a.data } })),
         ],
-      }
+      })
+    } else {
+      ollamaMessages.push({ role: m.role, content: m.content })
     }
   }
 

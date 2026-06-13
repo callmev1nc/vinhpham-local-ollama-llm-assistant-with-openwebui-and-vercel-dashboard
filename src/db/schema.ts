@@ -21,3 +21,17 @@ export const messages = pgTable("messages", {
   attachmentName: text("attachment_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 })
+
+export const attachments = pgTable("attachments", {
+  id: text("id").primaryKey(),
+  messageId: text("message_id")
+    .notNull()
+    .references(() => messages.id, { onDelete: "cascade" }),
+  type: text("type", { enum: ["image", "text", "document"] }).notNull(),
+  name: text("name").notNull(),
+  mime: text("mime"),
+  // image: full data URL (renders directly, prefix stripped for Ollama);
+  // text/document: extracted text (for preview).
+  data: text("data").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+})

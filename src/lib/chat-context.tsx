@@ -1,9 +1,10 @@
 "use client"
 
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from "react"
-import type { Conversation, Message, ClassificationResult, PullProgress, Attachment } from "@/types"
+import type { Conversation, Message, ClassificationResult, PullProgress, Attachment, AppConfig } from "@/types"
 import { classifyPrompt } from "@/lib/classifier"
 import { getDefaultModel } from "@/lib/ollama"
+import { readFileToAttachment } from "@/lib/file-read"
 
 function getOrCreateSessionId(): string {
   if (typeof window === "undefined") return ""
@@ -38,6 +39,9 @@ interface ChatState {
   autoSwitch: boolean
   modelSwitch: ModelSwitchInfo | null
   modelListVersion: number
+  config: AppConfig | null
+  pendingAttachments: Attachment[]
+  attachmentError: string | null
 }
 
 type Action =
@@ -57,6 +61,9 @@ type Action =
   | { type: "REMOVE_LAST_ASSISTANT" }
   | { type: "UPDATE_SYSTEM_PROMPT"; id: string; systemPrompt: string }
   | { type: "INCREMENT_MODEL_LIST_VERSION" }
+  | { type: "SET_CONFIG"; config: AppConfig | null }
+  | { type: "SET_PENDING_ATTACHMENTS"; attachments: Attachment[] }
+  | { type: "SET_ATTACHMENT_ERROR"; error: string | null }
 
 function reducer(state: ChatState, action: Action): ChatState {
   switch (action.type) {
@@ -132,6 +139,12 @@ function reducer(state: ChatState, action: Action): ChatState {
       }
     case "INCREMENT_MODEL_LIST_VERSION":
       return { ...state, modelListVersion: state.modelListVersion + 1 }
+    case "SET_CONFIG":
+      return { ...state, config: action.config }
+    case "SET_PENDING_ATTACHMENTS":
+      return { ...state, pendingAttachments: action.attachments }
+    case "SET_ATTACHMENT_ERROR":
+      return { ...state, attachmentError: action.error }
     default:
       return state
   }
@@ -141,9 +154,10 @@ interface ChatContextValue {
   state: ChatState
   dispatch: React.Dispatch<Action>
   loadConversations: () => Promise<void>
+  loadConfig: () => Promise<void>
   selectConversation: (id: string) => Promise<void>
   newConversation: (model?: string) => Promise<string>
-  sendMessage: (content: string, options?: { regenerate?: boolean; attachment?: Attachment }) => Promise<void>
+  sendMessage: (content: string, options?: { regenerate?: boolean; attachments?: Attachment[] }) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   renameConversation: (id: string, title: string) => Promise<void>
   setAutoSwitch: (value: boolean) => void
@@ -151,6 +165,9 @@ interface ChatContextValue {
   stopStreaming: () => void
   regenerateMessage: () => Promise<void>
   updateSystemPrompt: (id: string, systemPrompt: string) => Promise<void>
+  addFiles: (files: File[]) => Promise<void>
+  removeAttachment: (index: number) => void
+  clearAttachments: () => void
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -215,6 +232,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     autoSwitch: true,
     modelSwitch: null,
     modelListVersion: 0,
+    config: null,
+    pendingAttachments: [],
+    attachmentError: null,
   })
 
   const stateRef = useRef(state)
@@ -233,6 +253,44 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch {
       dispatch({ type: "SET_ERROR", error: "Failed to load conversations" })
     }
+  }, [])
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await fetch("/api/config")
+      const data = await res.json()
+      dispatch({ type: "SET_CONFIG", config: { groq: data.groq, visionModel: data.visionModel } })
+    } catch {
+      // Non-fatal: image auto-pull simply won't run.
+    }
+  }, [])
+
+  /** Read + validate files (picker, drag-drop, or paste) into pending attachments. */
+  const addFiles = useCallback(async (files: File[]) => {
+    if (!files.length) return
+    dispatch({ type: "SET_ATTACHMENT_ERROR", error: null })
+    const results = await Promise.all(files.map((f) => readFileToAttachment(f)))
+    const ok: Attachment[] = []
+    let error: string | null = null
+    for (const r of results) {
+      if (r.ok) ok.push(r.attachment)
+      else if (!error) error = r.error
+    }
+    if (error) dispatch({ type: "SET_ATTACHMENT_ERROR", error })
+    if (ok.length) {
+      const prev = stateRef.current.pendingAttachments
+      dispatch({ type: "SET_PENDING_ATTACHMENTS", attachments: [...prev, ...ok] })
+    }
+  }, [])
+
+  const removeAttachment = useCallback((index: number) => {
+    const prev = stateRef.current.pendingAttachments
+    dispatch({ type: "SET_PENDING_ATTACHMENTS", attachments: prev.filter((_, i) => i !== index) })
+  }, [])
+
+  const clearAttachments = useCallback(() => {
+    dispatch({ type: "SET_PENDING_ATTACHMENTS", attachments: [] })
+    dispatch({ type: "SET_ATTACHMENT_ERROR", error: null })
   }, [])
 
   const selectConversation = useCallback(async (id: string) => {
@@ -276,11 +334,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_PULL_PROGRESS", progress: null })
   }, [])
 
-  const sendMessage = useCallback(async (content: string, options?: { regenerate?: boolean; attachment?: Attachment }) => {
+  /** Pull a model on demand with progress UI. Returns "ok" | "aborted" | "error". */
+  const ensureModelPulled = useCallback(async (
+    modelName: string,
+    signal: AbortSignal
+  ): Promise<"ok" | "aborted" | "error"> => {
+    dispatch({ type: "SET_PULLING", pulling: true })
+    try {
+      await pullModel(modelName, (progress) => {
+        dispatch({ type: "SET_PULL_PROGRESS", progress })
+      }, signal)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        dispatch({ type: "SET_PULLING", pulling: false })
+        dispatch({ type: "SET_PULL_PROGRESS", progress: null })
+        dispatch({ type: "SET_STREAMING", streaming: false })
+        abortRef.current = null
+        return "aborted"
+      }
+      const msg = err instanceof Error ? err.message : "Failed to download model"
+      dispatch({ type: "SET_ERROR", error: msg })
+      dispatch({ type: "SET_PULLING", pulling: false })
+      dispatch({ type: "SET_STREAMING", streaming: false })
+      abortRef.current = null
+      return "error"
+    }
+    dispatch({ type: "SET_PULL_PROGRESS", progress: null })
+    dispatch({ type: "SET_PULLING", pulling: false })
+    dispatch({ type: "INCREMENT_MODEL_LIST_VERSION" })
+    return "ok"
+  }, [])
+
+  const sendMessage = useCallback(async (content: string, options?: { regenerate?: boolean; attachments?: Attachment[] }) => {
     const s = stateRef.current
     if (s.streaming || s.pulling) return
 
-    const attachment = options?.attachment
+    const attachments = options?.attachments
 
     let conversationId: string = s.activeId!
     if (!conversationId) {
@@ -304,8 +393,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           role: "user",
           content,
           createdAt: new Date().toISOString(),
-          attachmentType: attachment?.type || null,
-          attachmentName: attachment?.name || null,
+          attachmentType: attachments?.[0]?.type || null,
+          attachmentName: attachments?.[0]?.name || null,
+          attachments: attachments?.map((a) => ({
+            type: a.type,
+            name: a.name,
+            ...(a.type === "image" && a.data ? { data: a.data } : {}),
+          })),
         },
       })
 
@@ -353,39 +447,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     if (switched) {
-      dispatch({ type: "SET_PULLING", pulling: true })
-
-      try {
-        await pullModel(model, (progress) => {
-          dispatch({ type: "SET_PULL_PROGRESS", progress })
-        }, abortController.signal)
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          dispatch({ type: "SET_PULLING", pulling: false })
-          dispatch({ type: "SET_PULL_PROGRESS", progress: null })
-          dispatch({ type: "SET_STREAMING", streaming: false })
-          abortRef.current = null
-          return
-        }
-        const msg = err instanceof Error ? err.message : "Failed to download model"
-        dispatch({ type: "SET_ERROR", error: msg })
-        dispatch({ type: "SET_PULLING", pulling: false })
-        dispatch({ type: "SET_STREAMING", streaming: false })
-        abortRef.current = null
-        return
-      }
-
-      dispatch({ type: "SET_PULL_PROGRESS", progress: null })
-      dispatch({ type: "SET_PULLING", pulling: false })
-      dispatch({ type: "INCREMENT_MODEL_LIST_VERSION" })
+      const result = await ensureModelPulled(model, abortController.signal)
+      if (result !== "ok") return
       await switchModel(conversationId, model)
+    }
+
+    // Image analysis routes to a dedicated vision model; pull it locally so the
+    // first picture doesn't 404. Groq hosts its own model, so no pull is needed there.
+    if (attachments?.some((a) => a.type === "image") && !s.config?.groq && s.config?.visionModel) {
+      const result = await ensureModelPulled(s.config.visionModel, abortController.signal)
+      if (result !== "ok") return
     }
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: getSessionHeaders(),
-        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate, attachment }),
+        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate, attachments }),
         signal: abortController.signal,
       })
 
@@ -438,7 +516,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     abortRef.current = null
     dispatch({ type: "SET_STREAMING", streaming: false })
     await loadConversations()
-  }, [loadConversations, switchModel])
+  }, [loadConversations, switchModel, ensureModelPulled])
 
   const regenerateMessage = useCallback(async () => {
     const s = stateRef.current
@@ -485,7 +563,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     loadConversations()
-  }, [loadConversations])
+    loadConfig()
+  }, [loadConversations, loadConfig])
 
   useEffect(() => {
     if (state.error) {
@@ -508,6 +587,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     stopStreaming,
     regenerateMessage,
     updateSystemPrompt,
+    loadConfig,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
   }
 
   return (

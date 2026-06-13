@@ -5,6 +5,7 @@ import { ChatProvider } from "@/lib/chat-context"
 import { Sidebar } from "@/components/Sidebar"
 import { ChatMessages } from "@/components/ChatMessages"
 import { ChatInput } from "@/components/ChatInput"
+import { AttachmentDropZone } from "@/components/AttachmentDropZone"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { ShieldCheck } from "lucide-react"
@@ -18,7 +19,9 @@ export default function Home() {
       <ChatProvider>
         <div className="h-full flex">
           <Sidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
-          <main className={cn("flex-1 flex flex-col transition-all duration-200", sidebarOpen ? "ml-72" : "ml-0")}>
+          <AttachmentDropZone
+            className={cn("flex-1 flex flex-col transition-all duration-200", sidebarOpen ? "ml-72" : "ml-0")}
+          >
             <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
               <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs font-medium">
                 <ShieldCheck size={14} />
@@ -33,7 +36,7 @@ export default function Home() {
             </div>
             <ChatMessages />
             <ChatInput />
-          </main>
+          </AttachmentDropZone>
         </div>
       </ChatProvider>
     </ErrorBoundary>

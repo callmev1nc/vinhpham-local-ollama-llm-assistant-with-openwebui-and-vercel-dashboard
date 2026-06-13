@@ -6,7 +6,7 @@ import { classifyPrompt } from "@/lib/classifier"
 import { getModelInfo, formatBytes } from "@/lib/ollama"
 import { Send, Zap, Brain, Code, Sparkles, Download, Square, Paperclip, X, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { Attachment } from "@/types"
+import { FILE_ACCEPT } from "@/lib/file-constants"
 
 const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: string }> = {
   code: { label: "Code task", icon: Code, color: "text-green-500 bg-green-100 dark:bg-green-900/30" },
@@ -15,16 +15,9 @@ const categoryMeta: Record<string, { label: string; icon: typeof Zap; color: str
   general: { label: "General", icon: Zap, color: "text-blue-500 bg-blue-100 dark:bg-blue-900/30" },
 }
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-const ALLOWED_TEXT_EXTENSIONS = [".txt", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".md", ".csv", ".sql", ".css", ".html", ".sh", ".yaml", ".yml", ".toml", ".env", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".rb", ".php"]
-const MAX_IMAGE_SIZE = 4 * 1024 * 1024
-const MAX_TEXT_SIZE = 500 * 1024
-
 export function ChatInput() {
-  const { state, sendMessage, stopStreaming } = useChat()
+  const { state, sendMessage, stopStreaming, addFiles, removeAttachment, clearAttachments } = useChat()
   const [input, setInput] = useState("")
-  const [attachedFile, setAttachedFile] = useState<Attachment | null>(null)
-  const [fileError, setFileError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -42,57 +35,19 @@ export function ChatInput() {
   }, [input])
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setFileError(null)
-
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      if (file.size > MAX_IMAGE_SIZE) {
-        setFileError(`Image too large (max 4MB). File is ${formatBytes(file.size)}`)
-        return
-      }
-      const reader = new FileReader()
-      reader.onload = () => {
-        const base64 = reader.result as string
-        setAttachedFile({ type: "image", name: file.name, data: base64 })
-      }
-      reader.readAsDataURL(file)
-    } else {
-      const ext = "." + file.name.split(".").pop()?.toLowerCase()
-      if (!ALLOWED_TEXT_EXTENSIONS.includes(ext)) {
-        setFileError(`Unsupported file type: ${ext}. Allowed: ${ALLOWED_TEXT_EXTENSIONS.join(", ")}`)
-        return
-      }
-      if (file.size > MAX_TEXT_SIZE) {
-        setFileError(`File too large (max 500KB). File is ${formatBytes(file.size)}`)
-        return
-      }
-      const reader = new FileReader()
-      reader.onload = () => {
-        const text = reader.result as string
-        setAttachedFile({ type: "text", name: file.name, data: text })
-      }
-      reader.readAsText(file)
-    }
-
+    const files = e.target.files ? Array.from(e.target.files) : []
+    await addFiles(files)
     e.target.value = ""
-  }
-
-  const removeAttachment = () => {
-    setAttachedFile(null)
-    setFileError(null)
   }
 
   const handleSubmit = async () => {
     const trimmed = input.trim()
-    if ((!trimmed && !attachedFile) || state.streaming || state.pulling) return
+    if ((!trimmed && state.pendingAttachments.length === 0) || state.streaming || state.pulling) return
 
-    const file = attachedFile
-    setAttachedFile(null)
-    setFileError(null)
+    const files = state.pendingAttachments
+    clearAttachments()
     setInput("")
-    await sendMessage(trimmed, file ? { attachment: file } : undefined)
+    await sendMessage(trimmed, files.length ? { attachments: files } : undefined)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -155,42 +110,47 @@ export function ChatInput() {
           </div>
         )}
 
-        {fileError && (
+        {state.attachmentError && (
           <div className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
-            {fileError}
+            {state.attachmentError}
           </div>
         )}
 
-        {attachedFile && (
-          <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl px-3 py-2 border border-zinc-200 dark:border-zinc-700">
-            {attachedFile.type === "image" ? (
-              <div className="relative group">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={attachedFile.data}
-                  alt={attachedFile.name}
-                  className="h-16 w-auto rounded-lg object-cover border border-zinc-200 dark:border-zinc-600"
-                />
-                <button
-                  onClick={removeAttachment}
-                  className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors shadow-sm"
-                  title="Remove image"
+        {state.pendingAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 bg-zinc-50 dark:bg-zinc-800 rounded-xl px-3 py-2 border border-zinc-200 dark:border-zinc-700">
+            {state.pendingAttachments.map((file, i) =>
+              file.type === "image" ? (
+                <div key={i} className="relative group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={file.data}
+                    alt={file.name}
+                    className="h-16 w-auto rounded-lg object-cover border border-zinc-200 dark:border-zinc-600"
+                  />
+                  <button
+                    onClick={() => removeAttachment(i)}
+                    className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors shadow-sm"
+                    title="Remove image"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg px-2.5 py-1.5 text-xs"
                 >
-                  <X size={12} />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg px-2.5 py-1.5 text-xs">
-                <FileText size={14} className="text-blue-500" />
-                <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[200px]">{attachedFile.name}</span>
-                <button
-                  onClick={removeAttachment}
-                  className="p-0.5 rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                  title="Remove file"
-                >
-                  <X size={12} />
-                </button>
-              </div>
+                  <FileText size={14} className="text-blue-500" />
+                  <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[200px]">{file.name}</span>
+                  <button
+                    onClick={() => removeAttachment(i)}
+                    className="p-0.5 rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                    title="Remove file"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )
             )}
           </div>
         )}
@@ -213,7 +173,8 @@ export function ChatInput() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,.txt,.py,.js,.ts,.jsx,.tsx,.json,.md,.csv,.sql,.css,.html,.sh,.yaml,.yml,.toml,.env,.rs,.go,.java,.c,.cpp,.h,.rb,.php"
+              accept={FILE_ACCEPT}
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -238,7 +199,7 @@ export function ChatInput() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={(!input.trim() && !attachedFile) || state.pulling}
+                disabled={(!input.trim() && state.pendingAttachments.length === 0) || state.pulling}
                 className="p-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
               >
                 <Send size={16} />

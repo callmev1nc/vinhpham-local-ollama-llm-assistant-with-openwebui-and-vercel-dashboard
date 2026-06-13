@@ -89,18 +89,40 @@ export function ChatMessages() {
               </ReactMarkdown>
             ) : (
               <div>
-                {(msg.attachmentType || msg.attachmentName) && (
-                  <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-700 rounded-lg px-2.5 py-1.5">
-                    {msg.attachmentType === "image" ? (
-                      <ImageIcon size={14} />
-                    ) : (
-                      <FileText size={14} />
-                    )}
-                    <span className="font-medium truncate max-w-[200px]">
-                      {msg.attachmentName || (msg.attachmentType === "image" ? "Image attached" : "File attached")}
-                    </span>
-                  </div>
-                )}
+                {(() => {
+                  const items: { type: string; name: string; data?: string }[] =
+                    msg.attachments && msg.attachments.length
+                      ? msg.attachments.map((a) => ({ type: a.type, name: a.name, data: a.data }))
+                      : msg.attachmentType
+                        ? [{ type: msg.attachmentType, name: msg.attachmentName || "" }]
+                        : []
+                  if (!items.length) return null
+                  return (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {items.map((a, i) =>
+                        a.type === "image" && a.data ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={i}
+                            src={a.data}
+                            alt={a.name}
+                            className="max-h-40 w-auto rounded-lg border border-zinc-200 dark:border-zinc-600 object-cover"
+                          />
+                        ) : (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-700 rounded-lg px-2.5 py-1.5"
+                          >
+                            {a.type === "image" ? <ImageIcon size={14} /> : <FileText size={14} />}
+                            <span className="font-medium truncate max-w-[200px]">
+                              {a.name || (a.type === "image" ? "Image attached" : "File attached")}
+                            </span>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )
+                })()}
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               </div>
             )}
