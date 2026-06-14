@@ -2,10 +2,13 @@ import { NextRequest } from "next/server"
 import { db } from "@/db"
 import { conversations, messages, attachments as attachmentsTable } from "@/db/schema"
 import { chatStream, remapModelForProvider, isVisionModel, getVisionModel } from "@/lib/ollama"
-import { extractDocumentText } from "@/lib/documents"
 import type { MultimodalContent, Attachment } from "@/types"
 import { eq, and, inArray } from "drizzle-orm"
 import crypto from "crypto"
+
+// Generous duration: streaming a long analysis (and document text is now
+// extracted client-side) must not hit a short default. 300s is Hobby's max.
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   const { conversationId, model, content, regenerate, attachments } = (await req.json()) as {
@@ -35,58 +38,57 @@ export async function POST(req: NextRequest) {
     return new Response("Conversation not found", { status: 404 })
   }
 
-  // Process attachments: images route to a vision model (Groq Llama 4 Scout or a
-  // local Ollama vision model); documents are extracted; text/code is inlined.
-  const list = attachments ?? []
-  const imageCount = list.filter((a) => a.type === "image").length
   let finalModel = model
+  try {
+    const list = attachments ?? []
+    const imageCount = list.filter((a) => a.type === "image").length
+    const docBlocks: string[] = []
+    const persisted: { type: Attachment["type"]; name: string; mime: string | null; data: string }[] = []
 
-  const docBlocks: string[] = []
-  const persisted: { type: Attachment["type"]; name: string; mime: string | null; data: string }[] = []
-
-  for (const a of list) {
-    if (a.type === "image" && a.data) {
-      persisted.push({ type: "image", name: a.name, mime: a.mime ?? null, data: a.data })
-    } else if (a.type === "document" && a.data) {
-      const bytes = Buffer.from(a.data, "base64")
-      const docText = await extractDocumentText(a.name, bytes)
-      docBlocks.push(`[File: ${a.name}]\n\`\`\`\n${docText}\n\`\`\``)
-      persisted.push({ type: "document", name: a.name, mime: a.mime ?? null, data: docText })
-    } else if (a.type === "text" && a.data) {
-      docBlocks.push(`[File: ${a.name}]\n\`\`\`\n${a.data}\n\`\`\``)
-      persisted.push({ type: "text", name: a.name, mime: a.mime ?? null, data: a.data })
+    // Documents arrive already extracted to text on the client (src/lib/file-read.ts),
+    // so this function never does heavy parsing — avoids Vercel Hobby OOM/timeout.
+    for (const a of list) {
+      if (a.type === "image" && a.data) {
+        persisted.push({ type: "image", name: a.name, mime: a.mime ?? null, data: a.data })
+      } else if ((a.type === "document" || a.type === "text") && a.data) {
+        docBlocks.push(`[File: ${a.name}]\n\`\`\`\n${a.data}\n\`\`\``)
+        persisted.push({ type: a.type, name: a.name, mime: a.mime ?? null, data: a.data })
+      }
     }
-  }
 
-  let finalContent: string
-  if (docBlocks.length > 0) {
-    finalContent = `${docBlocks.join("\n\n---\n\n")}\n\n---\n\n${content || "Analyze these files"}`
-  } else if (content) {
-    finalContent = content
-  } else {
-    finalContent = imageCount > 1 ? "Describe these images" : "Describe this image"
-  }
+    const finalContent =
+      docBlocks.length > 0
+        ? `${docBlocks.join("\n\n---\n\n")}\n\n---\n\n${content || "Analyze these files"}`
+        : content
+          ? content
+          : imageCount > 1
+            ? "Describe these images"
+            : "Describe this image"
 
-  if (!regenerate) {
-    const userMessageId = crypto.randomUUID()
-    await db.insert(messages).values({
-      id: userMessageId,
-      conversationId,
-      role: "user",
-      content: finalContent,
-      attachmentType: persisted[0]?.type ?? null,
-      attachmentName: persisted[0]?.name ?? null,
-    })
-    for (const a of persisted) {
-      await db.insert(attachmentsTable).values({
-        id: crypto.randomUUID(),
-        messageId: userMessageId,
-        type: a.type,
-        name: a.name,
-        mime: a.mime,
-        data: a.data,
+    if (!regenerate) {
+      const userMessageId = crypto.randomUUID()
+      await db.insert(messages).values({
+        id: userMessageId,
+        conversationId,
+        role: "user",
+        content: finalContent,
+        attachmentType: persisted[0]?.type ?? null,
+        attachmentName: persisted[0]?.name ?? null,
       })
+      for (const a of persisted) {
+        await db.insert(attachmentsTable).values({
+          id: crypto.randomUUID(),
+          messageId: userMessageId,
+          type: a.type,
+          name: a.name,
+          mime: a.mime,
+          data: a.data,
+        })
+      }
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error"
+    return new Response(`Failed to process request: ${msg}`, { status: 500 })
   }
 
   const history = await db

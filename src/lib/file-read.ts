@@ -38,6 +38,45 @@ function extOf(name: string): string {
   return i >= 0 ? name.slice(i).toLowerCase() : ""
 }
 
+/** Cap extracted text (~50K tokens) to protect the model's context window. */
+const MAX_DOC_TEXT = 200_000
+function capText(text: string): string {
+  return text.length > MAX_DOC_TEXT
+    ? text.slice(0, MAX_DOC_TEXT) + "\n\n[…truncated — document exceeded 200,000 characters…]"
+    : text
+}
+
+/**
+ * Extract plain text from a document IN THE BROWSER (PDF/DOCX/XLSX/CSV/ODS).
+ * Parsers are imported dynamically so they only load when a doc is attached,
+ * keeping the initial bundle small. Doing this client-side avoids Vercel Hobby
+ * serverless limits (request body size, 1GB memory, function duration) that
+ * killed document uploads when parsing ran on the server.
+ */
+async function extractDocumentText(name: string, buf: ArrayBuffer): Promise<string> {
+  const ext = extOf(name)
+  if (ext === ".pdf") {
+    const { extractText, getDocumentProxy } = await import("unpdf")
+    const pdf = await getDocumentProxy(new Uint8Array(buf))
+    const { text } = await extractText(pdf, { mergePages: true })
+    return capText((text || "").trim() || "(No extractable text — this PDF may be scanned images.)")
+  }
+  if (ext === ".docx") {
+    const { default: mammoth } = await import("mammoth")
+    const result = await mammoth.extractRawText({ arrayBuffer: buf })
+    return capText((result.value || "").trim() || "(No extractable text in this .docx)")
+  }
+  if (ext === ".xlsx" || ext === ".xls" || ext === ".csv" || ext === ".ods") {
+    const XLSX = await import("xlsx")
+    const wb = XLSX.read(new Uint8Array(buf), { type: "array" })
+    const body = wb.SheetNames.map(
+      (sheet) => `### Sheet: ${sheet}\n${XLSX.utils.sheet_to_csv(wb.Sheets[sheet])}`
+    ).join("\n\n")
+    return capText(body.trim() || "(Empty spreadsheet)")
+  }
+  throw new Error(`Unsupported document type: ${ext || "(none)"}`)
+}
+
 /** Validate + read one file into an Attachment, or return an error message. */
 export async function readFileToAttachment(file: File): Promise<ReadResult> {
   if (ALLOWED_IMAGE_TYPES.includes(file.type)) {
@@ -53,9 +92,13 @@ export async function readFileToAttachment(file: File): Promise<ReadResult> {
     if (file.size > MAX_DOC_SIZE) {
       return { ok: false, error: `Document too large (max ${formatBytes(MAX_DOC_SIZE)}). ${file.name} is ${formatBytes(file.size)}` }
     }
-    const dataUrl = await readAsDataURL(file)
-    const base64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl
-    return { ok: true, attachment: { type: "document", name: file.name, data: base64, mime: file.type } }
+    try {
+      const buf = await file.arrayBuffer()
+      const text = await extractDocumentText(file.name, buf)
+      return { ok: true, attachment: { type: "document", name: file.name, data: text, mime: file.type } }
+    } catch (e) {
+      return { ok: false, error: `Could not read ${file.name}: ${e instanceof Error ? e.message : "unknown error"}` }
+    }
   }
 
   if (ALLOWED_TEXT_EXTENSIONS.includes(ext)) {

@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server"
 import { isGroq } from "@/lib/ollama"
 
+// Model downloads can be large and slow (multi-GB) — allow up to Hobby's 300s max.
+export const maxDuration = 300
+
 export async function POST(req: NextRequest) {
   const { model } = await req.json()
 
