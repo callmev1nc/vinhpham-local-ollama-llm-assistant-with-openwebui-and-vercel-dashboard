@@ -11,12 +11,13 @@ import crypto from "crypto"
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const { conversationId, model, content, regenerate, attachments } = (await req.json()) as {
+  const { conversationId, model, content, regenerate, attachments, userMessageId } = (await req.json()) as {
     conversationId?: string
     model?: string
     content?: string
     regenerate?: boolean
     attachments?: Attachment[]
+    userMessageId?: string
   }
 
   if (!conversationId || !model || (!content && !(attachments && attachments.length))) {
@@ -66,9 +67,11 @@ export async function POST(req: NextRequest) {
             : "Describe this image"
 
     if (!regenerate) {
-      const userMessageId = crypto.randomUUID()
+      // Prefer the client-supplied id so the optimistic local message and the
+      // persisted row share an id (required for edit/regenerate to target it).
+      const umId = userMessageId || crypto.randomUUID()
       await db.insert(messages).values({
-        id: userMessageId,
+        id: umId,
         conversationId,
         role: "user",
         content: finalContent,
@@ -78,7 +81,7 @@ export async function POST(req: NextRequest) {
       for (const a of persisted) {
         await db.insert(attachmentsTable).values({
           id: crypto.randomUUID(),
-          messageId: userMessageId,
+          messageId: umId,
           type: a.type,
           name: a.name,
           mime: a.mime,

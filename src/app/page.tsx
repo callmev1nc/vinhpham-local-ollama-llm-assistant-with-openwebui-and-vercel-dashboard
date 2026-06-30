@@ -8,36 +8,83 @@ import { ChatInput } from "@/components/ChatInput"
 import { AttachmentDropZone } from "@/components/AttachmentDropZone"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
-import { ShieldCheck } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { CommandPalette } from "@/components/CommandPalette"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import { ShieldCheck, Menu } from "lucide-react"
+import { TooltipWrap } from "@/components/ui/Tooltip"
 
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useKeyboardShortcuts({
+    onPalette: () => setPaletteOpen((v) => !v),
+    onNewChat: () => {
+      const event = new CustomEvent("vaultchat-new-chat")
+      window.dispatchEvent(event)
+    },
+    onFocusInput: () => {
+      const event = new CustomEvent("vaultchat-focus-input")
+      window.dispatchEvent(event)
+    },
+    onClose: () => {
+      setMobileOpen(false)
+      setPaletteOpen(false)
+    },
+  })
 
   return (
     <ErrorBoundary>
       <ChatProvider>
-        <div className="h-full flex">
-          <Sidebar open={sidebarOpen} onOpenChange={setSidebarOpen} />
-          <AttachmentDropZone
-            className={cn("flex-1 flex flex-col transition-all duration-200", sidebarOpen ? "ml-72" : "ml-0")}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-              <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs font-medium">
-                <ShieldCheck size={14} />
-                100% Private
-              </div>
+        <div className="h-full flex flex-col lg:flex-row">
+          <Sidebar
+            open={sidebarOpen}
+            onOpenChange={setSidebarOpen}
+            mobileOpen={mobileOpen}
+            onMobileOpenChange={setMobileOpen}
+          />
+          <AttachmentDropZone className="flex-1 flex flex-col min-w-0 relative">
+            {/* Mobile top bar */}
+            <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-subtle bg-surface">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-400 dark:text-zinc-600">
-                  Your Private AI
-                </span>
+                <button
+                  onClick={() => setMobileOpen(true)}
+                  className="p-1.5 rounded-xl text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
+                  aria-label="Open sidebar"
+                >
+                  <Menu size={20} />
+                </button>
+                <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-success/10 text-success text-[11px] font-medium">
+                  <ShieldCheck size={12} />
+                  100% Private
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <TooltipWrap label="VaultChat — Your Private AI">
+                  <span className="text-[11px] text-muted hidden xs:inline">Powered by Ollama</span>
+                </TooltipWrap>
                 <ThemeToggle />
               </div>
             </div>
+
+            {/* Desktop header */}
+            <div className="hidden lg:flex items-center justify-between px-6 py-3 border-b border-subtle bg-surface">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-success/10 text-success text-xs font-medium">
+                  <ShieldCheck size={14} />
+                  100% Private
+                </div>
+                <span className="text-xs text-muted">Your data stays local</span>
+              </div>
+              <ThemeToggle />
+            </div>
+
             <ChatMessages />
             <ChatInput />
           </AttachmentDropZone>
         </div>
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       </ChatProvider>
     </ErrorBoundary>
   )

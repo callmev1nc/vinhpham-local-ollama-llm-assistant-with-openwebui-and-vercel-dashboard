@@ -1,6 +1,7 @@
 "use client"
 
 import { Component, type ReactNode, type ErrorInfo } from "react"
+import { Bot } from "lucide-react"
 
 interface Props {
   children: ReactNode
@@ -28,13 +29,15 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="h-full flex items-center justify-center bg-white dark:bg-zinc-900">
+        <div className="h-full flex items-center justify-center bg-background">
           <div className="text-center space-y-4 max-w-md px-6">
-            <div className="text-4xl">⚡</div>
-            <h2 className="text-xl font-semibold text-zinc-800 dark:text-zinc-200">
+            <div className="w-12 h-12 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto">
+              <Bot size={24} className="text-accent" />
+            </div>
+            <h2 className="text-xl font-semibold text-foreground">
               Something went wrong
             </h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm text-muted">
               {this.state.error?.message || "An unexpected error occurred"}
             </p>
             <button
@@ -42,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 this.setState({ hasError: false, error: null })
                 window.location.reload()
               }}
-              className="px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-sm hover:opacity-90 transition-opacity"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent text-white px-5 py-2.5 text-sm font-medium hover:bg-accent-strong transition-colors shadow-soft"
             >
               Reload page
             </button>

@@ -1,57 +1,65 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { conversations, messages, attachments } from "@/db/schema"
-import { eq, and, inArray } from "drizzle-orm"
+import { messages, conversations } from "@/db/schema"
+import { eq, and, gte } from "drizzle-orm"
 
 function getSessionId(req: NextRequest): string {
   return req.headers.get("x-session-id") || req.nextUrl.searchParams.get("sessionId") || ""
 }
 
-export async function GET(
+/**
+ * DELETE /api/conversations/:id/messages
+ * Body: { afterMessageId: string }
+ *
+ * Deletes the message with ID `afterMessageId` and every message after it
+ * within the conversation. Cascade rules on the DB handle attachments cleanup.
+ */
+export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
+  const { id: conversationId } = await params
   const sessionId = getSessionId(req)
   if (!sessionId) {
     return NextResponse.json({ error: "Session ID required" }, { status: 401 })
   }
 
-  // Session isolation: verify the conversation belongs to this session.
+  // Verify ownership
   const [conv] = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq(conversations.sessionId, sessionId)))
+    .where(and(eq(conversations.id, conversationId), eq(conversations.sessionId, sessionId)))
     .limit(1)
+
   if (!conv) {
     return NextResponse.json({ error: "Not found" }, { status: 404 })
   }
 
-  const msgs = await db
+  const { afterMessageId } = await req.json()
+  if (!afterMessageId) {
+    return NextResponse.json({ error: "afterMessageId required" }, { status: 400 })
+  }
+
+  // Find the target message to get its createdAt timestamp
+  const [targetMsg] = await db
     .select()
     .from(messages)
-    .where(eq(messages.conversationId, id))
-    .orderBy(messages.createdAt)
+    .where(and(eq(messages.id, afterMessageId), eq(messages.conversationId, conversationId)))
+    .limit(1)
 
-  const msgIds = msgs.map((m) => m.id)
-  const atts = msgIds.length
-    ? await db.select().from(attachments).where(inArray(attachments.messageId, msgIds))
-    : []
-  const attsByMsg = new Map<string, typeof atts>()
-  for (const a of atts) {
-    const arr = attsByMsg.get(a.messageId) ?? []
-    arr.push(a)
-    attsByMsg.set(a.messageId, arr)
+  if (!targetMsg) {
+    return NextResponse.json({ error: "Message not found" }, { status: 404 })
   }
-  const messagesWithAttachments = msgs.map((m) => ({
-    ...m,
-    attachments: (attsByMsg.get(m.id) ?? []).map((a) => ({
-      type: a.type,
-      name: a.name,
-      mime: a.mime,
-      data: a.data,
-    })),
-  }))
 
-  return NextResponse.json({ messages: messagesWithAttachments })
+  // Delete the target message and everything after it
+  await db
+    .delete(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        gte(messages.createdAt, targetMsg.createdAt)
+      )
+    )
+
+  return NextResponse.json({ success: true })
 }

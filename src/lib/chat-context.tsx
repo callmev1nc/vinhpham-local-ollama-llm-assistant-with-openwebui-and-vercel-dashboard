@@ -1,10 +1,11 @@
 "use client"
 
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from "react"
-import type { Conversation, Message, ClassificationResult, PullProgress, Attachment, AppConfig } from "@/types"
+import type { Conversation, Message, ClassificationResult, PullProgress, Attachment, AppConfig, PromptTemplate } from "@/types"
 import { classifyPrompt } from "@/lib/classifier"
 import { getDefaultModel } from "@/lib/ollama"
 import { readFileToAttachment } from "@/lib/file-read"
+import { templates as seedTemplates } from "@/lib/templates"
 
 function getOrCreateSessionId(): string {
   if (typeof window === "undefined") return ""
@@ -19,6 +20,21 @@ function getSessionHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {}
   const sessionId = getOrCreateSessionId()
   return { "X-Session-Id": sessionId, "Content-Type": "application/json" }
+}
+
+function loadTemplates(): PromptTemplate[] {
+  if (typeof window === "undefined") return seedTemplates
+  try {
+    const stored = localStorage.getItem("vaultchat_templates")
+    if (stored) return JSON.parse(stored)
+  } catch {}
+  localStorage.setItem("vaultchat_templates", JSON.stringify(seedTemplates))
+  return seedTemplates
+}
+
+function saveTemplates(t: PromptTemplate[]) {
+  if (typeof window === "undefined") return
+  localStorage.setItem("vaultchat_templates", JSON.stringify(t))
 }
 
 interface ModelSwitchInfo {
@@ -42,6 +58,7 @@ interface ChatState {
   config: AppConfig | null
   pendingAttachments: Attachment[]
   attachmentError: string | null
+  templates: PromptTemplate[]
 }
 
 type Action =
@@ -59,11 +76,13 @@ type Action =
   | { type: "SET_MODEL_SWITCH"; info: ModelSwitchInfo | null }
   | { type: "UPDATE_CONVERSATION_MODEL"; id: string; model: string }
   | { type: "REMOVE_LAST_ASSISTANT" }
+  | { type: "TRUNCATE_MESSAGES_AFTER"; messageId: string }
   | { type: "UPDATE_SYSTEM_PROMPT"; id: string; systemPrompt: string }
   | { type: "INCREMENT_MODEL_LIST_VERSION" }
   | { type: "SET_CONFIG"; config: AppConfig | null }
   | { type: "SET_PENDING_ATTACHMENTS"; attachments: Attachment[] }
   | { type: "SET_ATTACHMENT_ERROR"; error: string | null }
+  | { type: "SET_TEMPLATES"; templates: PromptTemplate[] }
 
 function reducer(state: ChatState, action: Action): ChatState {
   switch (action.type) {
@@ -130,6 +149,11 @@ function reducer(state: ChatState, action: Action): ChatState {
       }
       return { ...state, messages: msgs }
     }
+    case "TRUNCATE_MESSAGES_AFTER": {
+      const idx = state.messages.findIndex((m) => m.id === action.messageId)
+      if (idx === -1) return state
+      return { ...state, messages: state.messages.slice(0, idx) }
+    }
     case "UPDATE_SYSTEM_PROMPT":
       return {
         ...state,
@@ -145,6 +169,8 @@ function reducer(state: ChatState, action: Action): ChatState {
       return { ...state, pendingAttachments: action.attachments }
     case "SET_ATTACHMENT_ERROR":
       return { ...state, attachmentError: action.error }
+    case "SET_TEMPLATES":
+      return { ...state, templates: action.templates }
     default:
       return state
   }
@@ -158,6 +184,7 @@ interface ChatContextValue {
   selectConversation: (id: string) => Promise<void>
   newConversation: (model?: string) => Promise<string>
   sendMessage: (content: string, options?: { regenerate?: boolean; attachments?: Attachment[] }) => Promise<void>
+  editMessage: (messageId: string, newContent: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
   renameConversation: (id: string, title: string) => Promise<void>
   setAutoSwitch: (value: boolean) => void
@@ -168,6 +195,7 @@ interface ChatContextValue {
   addFiles: (files: File[]) => Promise<void>
   removeAttachment: (index: number) => void
   clearAttachments: () => void
+  setTemplates: (templates: PromptTemplate[]) => void
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null)
@@ -235,6 +263,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     config: null,
     pendingAttachments: [],
     attachmentError: null,
+    templates: seedTemplates,
   })
 
   const stateRef = useRef(state)
@@ -242,6 +271,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     stateRef.current = state
   })
+
+  // Load templates from localStorage on mount
+  useEffect(() => {
+    dispatch({ type: "SET_TEMPLATES", templates: loadTemplates() })
+  }, [])
 
   const abortRef = useRef<AbortController | null>(null)
 
@@ -261,11 +295,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const data = await res.json()
       dispatch({ type: "SET_CONFIG", config: { groq: data.groq, visionModel: data.visionModel } })
     } catch {
-      // Non-fatal: image auto-pull simply won't run.
+      // Non-fatal
     }
   }, [])
 
-  /** Read + validate files (picker, drag-drop, or paste) into pending attachments. */
   const addFiles = useCallback(async (files: File[]) => {
     if (!files.length) return
     dispatch({ type: "SET_ATTACHMENT_ERROR", error: null })
@@ -334,7 +367,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_PULL_PROGRESS", progress: null })
   }, [])
 
-  /** Pull a model on demand with progress UI. Returns "ok" | "aborted" | "error". */
   const ensureModelPulled = useCallback(async (
     modelName: string,
     signal: AbortSignal
@@ -384,11 +416,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       await loadConversations()
     }
 
+    const userMessageId = crypto.randomUUID()
     if (!options?.regenerate) {
       dispatch({
         type: "ADD_MESSAGE",
         message: {
-          id: crypto.randomUUID(),
+          id: userMessageId,
           conversationId,
           role: "user",
           content,
@@ -452,8 +485,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       await switchModel(conversationId, model)
     }
 
-    // Image analysis routes to a dedicated vision model; pull it locally so the
-    // first picture doesn't 404. Groq hosts its own model, so no pull is needed there.
     if (attachments?.some((a) => a.type === "image") && !s.config?.groq && s.config?.visionModel) {
       const result = await ensureModelPulled(s.config.visionModel, abortController.signal)
       if (result !== "ok") return
@@ -463,7 +494,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: getSessionHeaders(),
-        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate, attachments }),
+        body: JSON.stringify({ conversationId, model, content, regenerate: options?.regenerate, attachments, userMessageId }),
         signal: abortController.signal,
       })
 
@@ -534,6 +565,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [sendMessage])
 
+  const editMessage = useCallback(async (messageId: string, newContent: string) => {
+    const s = stateRef.current
+    if (s.streaming || s.pulling) return
+    if (!s.activeId) return
+
+    const res = await fetch(`/api/conversations/${s.activeId}/messages`, {
+      method: "DELETE",
+      headers: getSessionHeaders(),
+      body: JSON.stringify({ afterMessageId: messageId }),
+    })
+    if (!res.ok) {
+      dispatch({ type: "SET_ERROR", error: "Failed to edit message" })
+      return
+    }
+
+    dispatch({ type: "TRUNCATE_MESSAGES_AFTER", messageId })
+
+    await sendMessage(newContent)
+  }, [sendMessage])
+
   const updateSystemPrompt = useCallback(async (id: string, systemPrompt: string) => {
     await fetch(`/api/conversations/${id}`, {
       method: "PATCH",
@@ -561,6 +612,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "SET_AUTO_SWITCH", value })
   }, [])
 
+  const setTemplates = useCallback((t: PromptTemplate[]) => {
+    saveTemplates(t)
+    dispatch({ type: "SET_TEMPLATES", templates: t })
+  }, [])
+
   useEffect(() => {
     loadConversations()
     loadConfig()
@@ -580,6 +636,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectConversation,
     newConversation,
     sendMessage,
+    editMessage,
     deleteConversation,
     renameConversation,
     setAutoSwitch,
@@ -591,6 +648,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     addFiles,
     removeAttachment,
     clearAttachments,
+    setTemplates,
   }
 
   return (

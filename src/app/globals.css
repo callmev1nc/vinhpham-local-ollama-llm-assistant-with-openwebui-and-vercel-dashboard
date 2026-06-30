@@ -1,52 +1,112 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 @import "highlight.js/styles/github-dark.css";
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-success: var(--success);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --breakpoint-xs: 400px;
+  --shadow-soft: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-soft-md: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-soft-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.04);
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #FAF9F7;
+  --surface: #FFFFFF;
+  --surface-2: #F4F2EE;
+  --foreground: #1C1B19;
+  --muted: #6B6862;
+  --subtle: #ECE9E4;
+  --accent: #BE5B3E;
+  --accent-strong: #A24C32;
+  --success: #4A8C5C;
+  --error: #C2423B;
+  --info: #3B7FB5;
+  --warning: #B8862C;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #1A1917;
+  --surface: #242320;
+  --surface-2: #2E2B28;
+  --foreground: #EDE9E3;
+  --muted: #A8A29A;
+  --subtle: #33302C;
+  --accent: #D9784E;
+  --accent-strong: #E88E62;
+  --success: #5DAF70;
+  --error: #D96C5A;
+  --info: #5A9FD4;
+  --warning: #D4A84B;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--subtle) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--subtle);
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #44403C;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans, Arial, Helvetica, sans-serif);
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #a1a1aa;
-  border-radius: 3px;
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: #52525b;
+::selection {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
-/* Code block styling */
-pre code {
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-}
-
-/* Animation for streaming dots */
 @keyframes bounce {
   0%, 80%, 100% { transform: translateY(0); }
   40% { transform: translateY(-4px); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

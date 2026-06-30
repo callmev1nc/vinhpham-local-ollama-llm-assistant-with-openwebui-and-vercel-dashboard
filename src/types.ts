@@ -77,3 +77,9 @@ export interface PullProgress {
   total?: number
   percent?: number
 }
+
+export interface PromptTemplate {
+  name: string
+  description: string
+  content: string
+}

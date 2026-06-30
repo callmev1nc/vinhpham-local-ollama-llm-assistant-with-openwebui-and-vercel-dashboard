@@ -56,7 +56,7 @@ export function ModelSelector() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-subtle text-sm text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
       >
         <span className="flex items-center gap-2 min-w-0">
           {activeInfo && (
@@ -66,15 +66,15 @@ export function ModelSelector() {
           )}
           <span className="truncate">{loading ? "Loading..." : activeModelName}</span>
         </span>
-        <ChevronDown size={16} className="shrink-0" />
+        <ChevronDown size={16} className="shrink-0 text-muted" />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 mt-1 z-20 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+          <div className="absolute left-0 right-0 mt-1 z-20 bg-surface border border-subtle rounded-xl shadow-soft-lg max-h-64 overflow-y-auto">
             {models.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-zinc-400">
+              <div className="px-3 py-2 text-sm text-muted">
                 No models found. Is Ollama running?
               </div>
             ) : (
@@ -88,15 +88,15 @@ export function ModelSelector() {
                     key={m.name}
                     onClick={() => handleSelect(m.name)}
                     className={cn(
-                      "w-full text-left px-3 py-2.5 text-sm transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-0",
+                      "w-full text-left px-3 py-2.5 text-sm transition-colors border-b border-subtle last:border-0",
                       isActive
-                        ? "bg-zinc-100 dark:bg-zinc-800"
-                        : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50 text-zinc-700 dark:text-zinc-300"
+                        ? "bg-surface-2 text-foreground"
+                        : "hover:bg-surface-2/50 text-muted hover:text-foreground"
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Icon size={14} className="shrink-0 text-zinc-400" />
+                        <Icon size={14} className="shrink-0 text-muted" />
                         <span className="font-medium truncate">{m.name}</span>
                       </div>
                       {info && (
@@ -106,7 +106,7 @@ export function ModelSelector() {
                       )}
                     </div>
                     {info && (
-                      <div className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500 ml-6">
+                      <div className="mt-0.5 text-xs text-muted ml-6">
                         {info.description}
                         <span className="ml-1">
                           · {info.bestFor.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(", ")}
